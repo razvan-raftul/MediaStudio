@@ -1,0 +1,23 @@
+name: build
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compilare
+        run: dotnet build MediaStudio.csproj -c Release -o out
+      - name: Publicare
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Continue'
+          Compress-Archive -Path out\MediaStudio.exe,out\MediaStudio.exe.config -DestinationPath MediaStudio.zip -Force
+          gh release delete latest --yes --cleanup-tag 2>$null
+          gh release create latest MediaStudio.zip --title "Media Studio" --notes "Versiune compilata automat"
