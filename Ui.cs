@@ -80,7 +80,7 @@ namespace MediaStudio
         public ComboBox Combo(string key, string label, IEnumerable<string> items, int selected = 0, bool editable = false, string description = null)
         {
             AddLabel(label);
-            var c = new ComboBox { DropDownStyle = editable ? ComboBoxStyle.DropDown : ComboBoxStyle.DropDownList, Width = 420, MaxDropDownItems = 20 };
+            var c = new SpokenComboBox { DropDownStyle = editable ? ComboBoxStyle.DropDown : ComboBoxStyle.DropDownList, Width = 420, MaxDropDownItems = 20 };
             c.Items.AddRange(items.Cast<object>().ToArray());
             if (c.Items.Count > 0) c.SelectedIndex = Math.Max(0, Math.Min(selected, c.Items.Count - 1));
             if (description != null) c.AccessibleDescription = description;
@@ -206,6 +206,30 @@ namespace MediaStudio
             AddWide(t);
             t.TabStop = false;
             return t;
+        }
+    }
+
+    /// <summary>
+    /// Listă derulantă care anunță singură valoarea nouă când e restrânsă și se schimbă cu săgețile.
+    /// În .NET Framework 4.8 ComboBox-ul restrâns nu trimite evenimentul de schimbare a valorii prin UI Automation,
+    /// așa că NVDA tace la săgeată sus/jos. Aici trimitem noi valoarea (UIA) și evenimentul clasic (MSAA).
+    /// </summary>
+    class SpokenComboBox : ComboBox
+    {
+        protected override void OnSelectedIndexChanged(EventArgs e)
+        {
+            base.OnSelectedIndexChanged(e);
+            if (!Focused || DroppedDown || !IsHandleCreated) return;
+            string text = SelectedItem != null ? SelectedItem.ToString() : Text;
+            if (string.IsNullOrEmpty(text)) text = "gol";
+            try { AccessibilityNotifyClients(AccessibleEvents.ValueChange, -1); } catch { }
+            try
+            {
+                AccessibilityObject.RaiseAutomationNotification(
+                    System.Windows.Forms.Automation.AutomationNotificationKind.ItemAdded,
+                    System.Windows.Forms.Automation.AutomationNotificationProcessing.MostRecent, text);
+            }
+            catch { }
         }
     }
 

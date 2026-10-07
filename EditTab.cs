@@ -31,6 +31,8 @@ namespace MediaStudio
             trOut = t.Path("trOut", "Fișier rezultat", PathKind.SaveFile, Dialogs.MediaFilter, "");
             t.Buttons(Builder.B("&Taie", (s, e) => Run(TrimJob())));
 
+            BuildCutsSection(b);
+
             var c = b.Section("Unire (concatenare)", false);
             ccFiles = c.List("ccFiles", "Fișiere de unit, în ordine");
             c.Buttons(
@@ -47,6 +49,8 @@ namespace MediaStudio
             spLen = sp.Text("spLen", "Lungimea unei bucăți (hh:mm:ss sau secunde)", "00:10:00");
             spOut = sp.Path("spOut", "Folder pentru bucăți", PathKind.Folder);
             sp.Buttons(Builder.B("Împarte", (s, e) => Run(SplitJob())));
+
+            BuildOverlaySection(b);
 
             PresetBar(b, "editare", () => edFields);
         }
