@@ -12,6 +12,14 @@ jobs:
       - uses: actions/checkout@v4
       - name: Compilare
         run: dotnet build MediaStudio.csproj -c Release -o out
+      - name: Program de instalare
+        shell: pwsh
+        run: |
+          try { Invoke-WebRequest "https://raw.githubusercontent.com/jrsoftware/issrc/main/Files/Languages/Unofficial/Romanian.isl" -OutFile Romanian.isl } catch { Write-Host "Fara traducere romana" }
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          & $iscc installer.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Publicare
         shell: pwsh
         env:
@@ -20,4 +28,4 @@ jobs:
           $ErrorActionPreference = 'Continue'
           Compress-Archive -Path out\MediaStudio.exe,out\MediaStudio.exe.config -DestinationPath MediaStudio.zip -Force
           gh release delete latest --yes --cleanup-tag 2>$null
-          gh release create latest MediaStudio.zip --title "Media Studio" --notes "Versiune compilata automat"
+          gh release create latest MediaStudio.zip MediaStudio-Setup.exe --title "Media Studio" --notes "Versiune compilata automat. MediaStudio-Setup.exe instaleaza programul si pune scurtatura pe desktop; MediaStudio.zip e varianta portabila."
