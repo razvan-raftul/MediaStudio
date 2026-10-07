@@ -52,7 +52,6 @@ namespace MediaStudio
 
             BuildOverlaySection(b);
 
-            PresetBar(b, "editare", () => edFields);
         }
 
         void MoveItem(ListBox l, int dir)

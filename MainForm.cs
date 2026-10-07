@@ -16,6 +16,7 @@ namespace MediaStudio
         TextBox statusBox, logBox;
         ProgressBar progress;
         Button cancelBtn;
+        CheckBox detailsToggle;
         readonly Runner runner = new Runner();
         readonly Queue<Job> queue = new Queue<Job>();
         int jobsTotal, jobsDone, jobsFailed;
@@ -80,28 +81,37 @@ namespace MediaStudio
             panel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             int ti = 0;
+            // mereu vizibile: Stare, Oprește și caseta care arată detaliile
             panel.Controls.Add(new Label { Text = "St&are:", AutoSize = true, Anchor = AnchorStyles.Left, TabIndex = ti++ }, 0, 0);
             statusBox = new TextBox { ReadOnly = true, Anchor = AnchorStyles.Left | AnchorStyles.Right, AccessibleName = "Stare", Text = "Pregătit.", TabIndex = ti++ };
             panel.Controls.Add(statusBox, 1, 0);
-            panel.Controls.Add(new Label { Text = "Progres:", AutoSize = true, Anchor = AnchorStyles.Left, TabIndex = ti++ }, 0, 1);
-            progress = new ProgressBar { Anchor = AnchorStyles.Left | AnchorStyles.Right, AccessibleName = "Progres", Maximum = 1000, TabIndex = ti++, Height = 18 };
-            panel.Controls.Add(progress, 1, 1);
             var flow = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, TabIndex = ti++, Margin = new Padding(0, 4, 0, 4) };
             cancelBtn = new Button { Text = "&Oprește operațiunea", AutoSize = true, Enabled = false, AccessibleName = "Oprește operațiunea", TabIndex = 0 };
             cancelBtn.Click += (s, e) => { queue.Clear(); runner.Cancel(); Announce("Opresc operațiunea…"); };
-            var copyLog = new Button { Text = "Copiază &jurnalul", AutoSize = true, AccessibleName = "Copiază jurnalul", TabIndex = 1 };
-            copyLog.Click += (s, e) => { FlushLog(); if (logBox.TextLength > 0) { Clipboard.SetText(logBox.Text); Announce("Jurnalul a fost copiat."); } };
-            var copyCmd = new Button { Text = "Copiază ultima comandă", AutoSize = true, AccessibleName = "Copiază ultima comandă", TabIndex = 2 };
-            copyCmd.Click += (s, e) => { if (lastCommand.Length > 0) { Clipboard.SetText(lastCommand); Announce("Comanda a fost copiată."); } else Announce("Nu s-a rulat încă nicio comandă."); };
-            var clear = new Button { Text = "Golește jurnalul", AutoSize = true, AccessibleName = "Golește jurnalul", TabIndex = 3 };
-            clear.Click += (s, e) => { logBox.Clear(); Announce("Jurnal golit."); };
-            flow.Controls.AddRange(new Control[] { cancelBtn, copyLog, copyCmd, clear });
-            panel.Controls.Add(flow, 0, 2); panel.SetColumnSpan(flow, 2);
-            panel.Controls.Add(new Label { Text = "Ju&rnal:", AutoSize = true, Anchor = AnchorStyles.Left | AnchorStyles.Top, TabIndex = ti++ }, 0, 3);
-            logBox = new TextBox { ReadOnly = true, Multiline = true, ScrollBars = ScrollBars.Both, WordWrap = false, Height = 150, Anchor = AnchorStyles.Left | AnchorStyles.Right, AccessibleName = "Jurnal", TabIndex = ti++, Font = new Font("Consolas", 9.5f) };
-            panel.Controls.Add(logBox, 1, 3);
+            detailsToggle = new CheckBox { Text = "Arată progresul și &jurnalul", AutoSize = true, AccessibleName = "Arată progresul și jurnalul", TabIndex = 1, Margin = new Padding(12, 6, 3, 3) };
+            flow.Controls.AddRange(new Control[] { cancelBtn, detailsToggle });
+            panel.Controls.Add(flow, 0, 1); panel.SetColumnSpan(flow, 2);
+
+            // restrânse: Progres, Copiază jurnalul, Jurnal
+            var details = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Anchor = AnchorStyles.Left | AnchorStyles.Right, Margin = new Padding(0), TabIndex = ti++, Visible = false };
+            details.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            details.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            int di = 0;
+            details.Controls.Add(new Label { Text = "Progres:", AutoSize = true, Anchor = AnchorStyles.Left, TabIndex = di++ }, 0, 0);
+            progress = new ProgressBar { Anchor = AnchorStyles.Left | AnchorStyles.Right, AccessibleName = "Progres", Maximum = 1000, TabIndex = di++, Height = 18 };
+            details.Controls.Add(progress, 1, 0);
+            var copyLog = new Button { Text = "Copiază jurnalul", AutoSize = true, AccessibleName = "Copiază jurnalul", TabIndex = di++, Margin = new Padding(3, 4, 3, 4) };
+            copyLog.Click += (s, e) => { FlushLog(); if (logBox.TextLength > 0) { Clipboard.SetText(logBox.Text); Announce("Jurnalul a fost copiat."); } else Announce("Jurnalul e gol."); };
+            details.Controls.Add(copyLog, 0, 1); details.SetColumnSpan(copyLog, 2);
+            details.Controls.Add(new Label { Text = "Ju&rnal:", AutoSize = true, Anchor = AnchorStyles.Left | AnchorStyles.Top, TabIndex = di++ }, 0, 2);
+            logBox = new TextBox { ReadOnly = true, Multiline = true, ScrollBars = ScrollBars.Both, WordWrap = false, Height = 150, Anchor = AnchorStyles.Left | AnchorStyles.Right, AccessibleName = "Jurnal", TabIndex = di++, Font = new Font("Consolas", 9.5f) };
+            details.Controls.Add(logBox, 1, 2);
+            panel.Controls.Add(details, 0, 2); panel.SetColumnSpan(details, 2);
+            detailsToggle.CheckedChanged += (s, e) => { details.Visible = detailsToggle.Checked; };
             Controls.Add(panel);
         }
+
+        void ShowDetails() { if (!detailsToggle.Checked) detailsToggle.Checked = true; }
 
         /// <summary>Afișează mesajul în câmpul Stare și îl trimite către NVDA (notificare UI Automation).</summary>
         public void Announce(string msg, bool important = true)
@@ -247,7 +257,7 @@ namespace MediaStudio
                     int i = k - Keys.D1;
                     if (i < tabs.TabPages.Count) { tabs.SelectedIndex = i; tabs.Focus(); return true; }
                 }
-                if (k == Keys.L && (keyData & Keys.Shift) == 0) { FlushLog(); logBox.Focus(); return true; }
+                if (k == Keys.L && (keyData & Keys.Shift) == 0) { ShowDetails(); FlushLog(); logBox.Focus(); return true; }
                 if (k == Keys.T && (keyData & Keys.Shift) == 0) { statusBox.Focus(); return true; }
             }
             if (keyData == Keys.F1) { ShowHelp(); return true; }

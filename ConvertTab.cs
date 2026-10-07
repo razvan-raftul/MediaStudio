@@ -63,9 +63,7 @@ namespace MediaStudio
             cvHw = t.Combo("hw", "Accelerare hardware la decodare", new[] { "Nu", "auto", "cuda", "qsv", "d3d11va", "dxva2" });
 
             b.Buttons(
-                Builder.B("Con&vertește", (s, e) => Run(cvFiles.Items.Cast<string>().Select(f => ConvertJob(f)).ToList())),
-                Builder.B("Arată comanda", (s, e) => { var f = cvFiles.Items.Cast<string>().FirstOrDefault() ?? "intrare.mp4"; var j = ConvertJob(f); if (j != null) { lastCommand = Runner.CommandLine(j); Log("> " + lastCommand); Announce("Comanda e în jurnal."); } }));
-            PresetBar(b, "conversie", () => cvFields);
+                Builder.B("Con&vertește", (s, e) => Run(cvFiles.Items.Cast<string>().Select(f => ConvertJob(f)).ToList())));
 
             Action sync = () =>
             {
