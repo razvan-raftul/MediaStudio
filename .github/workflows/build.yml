@@ -5,20 +5,25 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+concurrency:
+  group: build
+  cancel-in-progress: false
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      APPVER: 0.2.${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
       - name: Compilare
-        run: dotnet build MediaStudio.csproj -c Release -o out
+        run: dotnet build MediaStudio.csproj -c Release -o out -p:Version=${{ env.APPVER }}
       - name: Program de instalare
         shell: pwsh
         run: |
           try { Invoke-WebRequest "https://raw.githubusercontent.com/jrsoftware/issrc/main/Files/Languages/Unofficial/Romanian.isl" -OutFile Romanian.isl } catch { Write-Host "Fara traducere romana" }
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
-          & $iscc installer.iss
+          & $iscc "/DAppVersion=$env:APPVER" installer.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Publicare
         shell: pwsh
@@ -26,6 +31,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Continue'
+          Set-Content -Path version.txt -Value $env:APPVER -NoNewline -Encoding ascii
           Compress-Archive -Path out\MediaStudio.exe,out\MediaStudio.exe.config -DestinationPath MediaStudio.zip -Force
           gh release delete latest --yes --cleanup-tag 2>$null
-          gh release create latest MediaStudio.zip MediaStudio-Setup.exe --title "Media Studio" --notes "Versiune compilata automat. MediaStudio-Setup.exe instaleaza programul si pune scurtatura pe desktop; MediaStudio.zip e varianta portabila."
+          gh release create latest MediaStudio-Setup.exe MediaStudio.zip version.txt --title "Media Studio $env:APPVER" --notes "Versiunea $env:APPVER. MediaStudio-Setup.exe instaleaza programul si pune scurtatura pe desktop; programul se actualizeaza singur la pornire."
