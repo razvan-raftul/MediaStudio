@@ -27,7 +27,7 @@ namespace MediaStudio
 
         public MainForm()
         {
-            Text = "Media Studio – FFmpeg și yt-dlp";
+            Text = "Media Studio";
             Width = 900; Height = 760;
             StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Segoe UI", 9.5f);
@@ -41,13 +41,16 @@ namespace MediaStudio
             Controls.Add(tabs);
             tabs.BringToFront();
 
-            AddTab("&Descărcare", BuildDownloadTab);
-            AddTab("&Conversie", BuildConvertTab);
-            AddTab("&Editare", BuildEditTab);
-            AddTab("&Piste și subtitrări", BuildTracksTab);
-            AddTab("&Metadate", BuildMetadataTab);
-            AddTab("&Toate opțiunile", BuildOptionsTab);
-            AddTab("&Setări", BuildSettingsTab);
+            AddTab("Descărcare", BuildDownloadTab);
+            AddTab("Conversie", BuildConvertTab);
+            AddTab("Tăiere", BuildCutTab);
+            AddTab("Lipire", BuildJoinTab);
+            AddTab("Împărțire", BuildSplitTab);
+            AddTab("Poze pe videoclip", BuildOverlayTab);
+            AddTab("Piste și subtitrări", BuildTracksTab);
+            AddTab("Metadate", BuildMetadataTab);
+            AddTab("Toate opțiunile", BuildOptionsTab);
+            AddTab("Setări", BuildSettingsTab);
 
             runner.Line += (l, err) => { lock (pendingLog) pendingLog.Append(l).Append("\r\n"); };
             runner.Progress += p => BeginInvoke((Action)(() => OnProgress(p)));
@@ -55,16 +58,20 @@ namespace MediaStudio
             logTimer.Tick += (s, e) => FlushLog();
             logTimer.Start();
 
-            if (Settings.LastTab >= 0 && Settings.LastTab < tabs.TabPages.Count) tabs.SelectedIndex = Settings.LastTab;
-            Shown += (s, e) => { tabs.Focus(); ReportMissingTools(true); };
+            tabs.SelectedIndex = 0; // la pornire se deschide mereu Descărcare
+            Shown += (s, e) => { tabs.Focus(); ReportMissingTools(true); Updater.CheckAsync(this); };
             FormClosing += (s, e) =>
             {
-                if (runner.Running && MessageBox.Show(this, "O operațiune încă rulează. O opresc și închid aplicația?", "Media Studio", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) { e.Cancel = true; return; }
+                if (!updating && runner.Running && MessageBox.Show(this, "O operațiune încă rulează. O opresc și închid aplicația?", "Media Studio", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) { e.Cancel = true; return; }
                 runner.Cancel();
                 Settings.LastTab = tabs.SelectedIndex;
                 Settings.Save();
             };
         }
+
+        bool updating;
+        public bool IsBusy { get { return runner.Running; } }
+        public void CloseForUpdate() { updating = true; Close(); }
 
         void AddTab(string title, Action<TabPage> build)
         {
@@ -82,7 +89,7 @@ namespace MediaStudio
             panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             int ti = 0;
             // mereu vizibile: Stare, Oprește și caseta care arată detaliile
-            panel.Controls.Add(new Label { Text = "St&are:", AutoSize = true, Anchor = AnchorStyles.Left, TabIndex = ti++ }, 0, 0);
+            panel.Controls.Add(new Label { Text = "Stare:", AutoSize = true, Anchor = AnchorStyles.Left, TabIndex = ti++ }, 0, 0);
             statusBox = new TextBox { ReadOnly = true, Anchor = AnchorStyles.Left | AnchorStyles.Right, AccessibleName = "Stare", Text = "Pregătit.", TabIndex = ti++ };
             panel.Controls.Add(statusBox, 1, 0);
             var flow = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, TabIndex = ti++, Margin = new Padding(0, 4, 0, 4) };
@@ -252,9 +259,9 @@ namespace MediaStudio
             if ((keyData & Keys.Control) == Keys.Control && (keyData & Keys.Alt) == 0)
             {
                 var k = keyData & Keys.KeyCode;
-                if (k >= Keys.D1 && k <= Keys.D9 && (keyData & Keys.Shift) == 0)
+                if (k >= Keys.D0 && k <= Keys.D9 && (keyData & Keys.Shift) == 0)
                 {
-                    int i = k - Keys.D1;
+                    int i = k == Keys.D0 ? 9 : k - Keys.D1;
                     if (i < tabs.TabPages.Count) { tabs.SelectedIndex = i; tabs.Focus(); return true; }
                 }
                 if (k == Keys.L && (keyData & Keys.Shift) == 0) { ShowDetails(); FlushLog(); logBox.Focus(); return true; }
@@ -268,8 +275,8 @@ namespace MediaStudio
         {
             MessageBox.Show(this,
                 "Scurtături:\r\n" +
-                "Control+1 până la Control+7: mergi la secțiunea 1-7 (Descărcare, Conversie, Editare, Piste și subtitrări, Metadate, Toate opțiunile, Setări).\r\n" +
-                "Control+Tab și Control+Shift+Tab: secțiunea următoare sau anterioară.\r\n" +
+                "Control+1 Descărcare, Control+2 Conversie, Control+3 Tăiere, Control+4 Lipire, Control+5 Împărțire, Control+6 Poze pe videoclip, Control+7 Piste și subtitrări, Control+8 Metadate, Control+9 Toate opțiunile, Control+0 Setări.\r\n" +
+                "Control+Tab și Control+Shift+Tab: tabul următor sau anterior.\r\n" +
                 "Control+L: jurnalul. Control+T: câmpul Stare.\r\n" +
                 "Alt cu litera subliniată: mergi direct la un câmp sau buton.\r\n" +
                 "F1: acest ajutor.\r\n\r\n" +
@@ -283,7 +290,8 @@ namespace MediaStudio
 
         public static string OutPath(string input, string folder, string suffix, string ext)
         {
-            var dir = string.IsNullOrWhiteSpace(folder) ? Path.GetDirectoryName(input) : folder;
+            var dir = string.IsNullOrWhiteSpace(folder) ? Settings.DownloadFolder : folder.Trim();
+            try { Directory.CreateDirectory(dir); } catch { }
             var name = Path.GetFileNameWithoutExtension(input) + suffix;
             var p = Path.Combine(dir, name + "." + ext.TrimStart('.'));
             if (string.Equals(p, input, StringComparison.OrdinalIgnoreCase)) p = Path.Combine(dir, name + " (nou)." + ext.TrimStart('.'));

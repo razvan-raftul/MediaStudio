@@ -15,6 +15,7 @@ namespace MediaStudio
             Application.ThreadException += (s, e) => ShowCrash(e.Exception);
             AppDomain.CurrentDomain.UnhandledException += (s, e) => ShowCrash(e.ExceptionObject as Exception);
             Settings.Load();
+            try { System.IO.Directory.CreateDirectory(Settings.DownloadFolder); } catch { }
             Application.Run(new MainForm());
         }
 

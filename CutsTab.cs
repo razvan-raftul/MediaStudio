@@ -20,7 +20,7 @@ namespace MediaStudio
 
         void BuildCutsSection(Builder b)
         {
-            var c = b.Section("Tăieturi din mijloc și fade", false);
+            var c = b.Section("Tăiere și fade", false);
             c.Note("Marchezi una sau mai multe bucăți: scrii începutul și sfârșitul și apeși Adaugă bucata. Alegi dacă bucățile marcate se scot din clip sau se păstrează doar ele. Poți pune și fade la început și la sfârșit. La final apeși Aplică tăieturile. Fișierul original nu se modifică.");
             cuIn = c.Path("cuIn", "Fișier de &editat", PathKind.OpenFile, Dialogs.MediaFilter);
             cuStart = c.Text(null, "Începutul bucății (secunde, mm:ss sau hh:mm:ss)", "", false, "De exemplu 1:20 înseamnă minutul 1 și 20 de secunde.");

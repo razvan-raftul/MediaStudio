@@ -27,7 +27,7 @@ namespace MediaStudio
                 Builder.B("Verifică versiunile", (s, e) => ShowVersions()));
 
             var g = b.Section("General", false);
-            stFolder = g.Path(null, "Folder implicit pentru descărcări", PathKind.Folder, null, Settings.DownloadFolder);
+            stFolder = g.Path(null, "Folder implicit pentru tot ce salvez", PathKind.Folder, null, Settings.DownloadFolder);
             stOverwrite = g.Check(null, "Suprascrie fișierele existente fără să întrebe", Settings.Overwrite);
             stAnnounce = g.Check(null, "Anunță progresul cu NVDA", Settings.AnnounceProgress);
             stStep = g.Combo(null, "Anunță progresul la fiecare", new[] { "5%", "10%", "20%", "25%", "50%" }, 1);
@@ -35,7 +35,8 @@ namespace MediaStudio
             stDialogs = g.Check(null, "Arată erorile într-o fereastră separată", Settings.ErrorDialogs);
             stSound = g.Check(null, "Sunet la terminarea operațiunilor", Settings.DoneSound);
             b.Buttons(Builder.B("&Salvează setările", (s, e) => { SaveSettingsFromUi(); Announce("Setările au fost salvate."); }),
-                      Builder.B("Deschide folderul cu presetări", (s, e) => { Directory.CreateDirectory(Settings.PresetDir); System.Diagnostics.Process.Start("explorer.exe", Runner.Quote(Settings.PresetDir)); }));
+                      Builder.B("Deschide folderul Media Studio", (s, e) => { Directory.CreateDirectory(Settings.DownloadFolder); System.Diagnostics.Process.Start("explorer.exe", Runner.Quote(Settings.DownloadFolder)); }),
+                      Builder.B("Caută actualizări acum", (s, e) => { Announce("Caut o versiune nouă…"); Updater.CheckAsync(this, true); }));
 
             EventHandler save = (s, e) => SaveSettingsFromUi();
             foreach (var c in new Control[] { stYt, stFf, stProbe, stFolder }) c.Leave += save;

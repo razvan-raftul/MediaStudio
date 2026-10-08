@@ -18,8 +18,9 @@ namespace MediaStudio
         public static string YtdlpPath { get { return Get("ytdlp"); } set { Set("ytdlp", value); } }
         public static string DownloadFolder
         {
-            get { var v = Get("downloadFolder"); return string.IsNullOrEmpty(v) ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads") : v; }
-            set { Set("downloadFolder", value); }
+            // folderul implicit pentru tot ce salvează aplicația: Documente\Media Studio
+            get { var v = Get("mediaFolder"); return string.IsNullOrEmpty(v) ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Media Studio") : v; }
+            set { Set("mediaFolder", value); }
         }
         public static bool AnnounceProgress { get { return Get("announceProgress", "1") == "1"; } set { Set("announceProgress", value ? "1" : "0"); } }
         public static int AnnounceStep { get { int n; return int.TryParse(Get("announceStep", "10"), out n) && n > 0 ? n : 10; } set { Set("announceStep", value.ToString()); } }

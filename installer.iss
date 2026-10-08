@@ -3,7 +3,9 @@
 ; ca folderul „unelte” de lângă program să poată fi scris (FFmpeg și yt-dlp se descarcă acolo).
 
 #define AppName "Media Studio"
-#define AppVersion "0.1.1"
+#ifndef AppVersion
+  #define AppVersion "0.2.0"
+#endif
 
 [Setup]
 AppId={{6C1E0A52-7B4D-4E0B-9C1D-5A3E2F1B7D40}
@@ -45,6 +47,14 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\MediaStudio.exe"; Tasks: desk
 
 [Run]
 Filename: "{app}\MediaStudio.exe"; Description: "Pornește Media Studio acum"; Flags: nowait postinstall skipifsilent
+; la actualizarea automată (instalare fără ferestre) aplicația se redeschide singură
+Filename: "{app}\MediaStudio.exe"; Flags: nowait; Check: IsAutoUpdate
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\unelte"
+
+[Code]
+function IsAutoUpdate: Boolean;
+begin
+  Result := Pos('/AUTOUPDATE', Uppercase(GetCmdTail)) > 0;
+end;
