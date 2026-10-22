@@ -43,6 +43,8 @@ namespace MediaStudio
 
             AddTab("Descărcare", BuildDownloadTab);
             AddTab("Conversie", BuildConvertTab);
+            AddTab("Volum", BuildVolumeTab);
+            AddTab("Voce și instrumente", BuildSeparareTab);
             AddTab("Tăiere", BuildCutTab);
             AddTab("Lipire", BuildJoinTab);
             AddTab("Împărțire", BuildSplitTab);
@@ -62,15 +64,16 @@ namespace MediaStudio
             Shown += (s, e) => { tabs.Focus(); ReportMissingTools(true); Updater.CheckAsync(this); };
             FormClosing += (s, e) =>
             {
-                if (!updating && runner.Running && MessageBox.Show(this, "O operațiune încă rulează. O opresc și închid aplicația?", "Media Studio", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) { e.Cancel = true; return; }
+                if (!updating && (runner.Running || sepBusy) && MessageBox.Show(this, "O operațiune încă rulează. O opresc și închid aplicația?", "Media Studio", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) { e.Cancel = true; return; }
                 runner.Cancel();
+                SepStop(true);
                 Settings.LastTab = tabs.SelectedIndex;
                 Settings.Save();
             };
         }
 
         bool updating;
-        public bool IsBusy { get { return runner.Running; } }
+        public bool IsBusy { get { return runner.Running || sepBusy; } }
         public void CloseForUpdate() { updating = true; Close(); }
 
         void AddTab(string title, Action<TabPage> build)
@@ -94,7 +97,7 @@ namespace MediaStudio
             panel.Controls.Add(statusBox, 1, 0);
             var flow = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, TabIndex = ti++, Margin = new Padding(0, 4, 0, 4) };
             cancelBtn = new Button { Text = "&Oprește operațiunea", AutoSize = true, Enabled = false, AccessibleName = "Oprește operațiunea", TabIndex = 0 };
-            cancelBtn.Click += (s, e) => { queue.Clear(); runner.Cancel(); Announce("Opresc operațiunea…"); };
+            cancelBtn.Click += (s, e) => { queue.Clear(); runner.Cancel(); SepStop(true); Announce("Opresc operațiunea…"); };
             detailsToggle = new CheckBox { Text = "Arată progresul și &jurnalul", AutoSize = true, AccessibleName = "Arată progresul și jurnalul", TabIndex = 1, Margin = new Padding(12, 6, 3, 3) };
             flow.Controls.AddRange(new Control[] { cancelBtn, detailsToggle });
             panel.Controls.Add(flow, 0, 1); panel.SetColumnSpan(flow, 2);
@@ -261,7 +264,8 @@ namespace MediaStudio
                 var k = keyData & Keys.KeyCode;
                 if (k >= Keys.D0 && k <= Keys.D9 && (keyData & Keys.Shift) == 0)
                 {
-                    int i = k == Keys.D0 ? 9 : k - Keys.D1;
+                    // Control+1…9 primele nouă taburi, Control+0 mereu Setări (ultimul tab)
+                    int i = k == Keys.D0 ? tabs.TabPages.Count - 1 : k - Keys.D1;
                     if (i < tabs.TabPages.Count) { tabs.SelectedIndex = i; tabs.Focus(); return true; }
                 }
                 if (k == Keys.L && (keyData & Keys.Shift) == 0) { ShowDetails(); FlushLog(); logBox.Focus(); return true; }
@@ -275,7 +279,7 @@ namespace MediaStudio
         {
             MessageBox.Show(this,
                 "Scurtături:\r\n" +
-                "Control+1 Descărcare, Control+2 Conversie, Control+3 Tăiere, Control+4 Lipire, Control+5 Împărțire, Control+6 Poze pe videoclip, Control+7 Piste și subtitrări, Control+8 Metadate, Control+9 Toate opțiunile, Control+0 Setări.\r\n" +
+                "Control+1 Descărcare, Control+2 Conversie, Control+3 Volum, Control+4 Voce și instrumente, Control+5 Tăiere, Control+6 Lipire, Control+7 Împărțire, Control+8 Poze pe videoclip, Control+9 Piste și subtitrări, Control+0 Setări. Metadate și Toate opțiunile nu au scurtătură.\r\n" +
                 "Control+Tab și Control+Shift+Tab: tabul următor sau anterior.\r\n" +
                 "Control+L: jurnalul. Control+T: câmpul Stare.\r\n" +
                 "Alt cu litera subliniată: mergi direct la un câmp sau buton.\r\n" +

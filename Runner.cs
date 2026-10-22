@@ -131,7 +131,7 @@ namespace MediaStudio
                          || line.IndexOf("Invalid", StringComparison.Ordinal) >= 0 || line.IndexOf("No such file", StringComparison.Ordinal) >= 0
                          || line.IndexOf("not found", StringComparison.OrdinalIgnoreCase) >= 0 && stderr;
             if (isErr) lock (ErrorLines) ErrorLines.Add(line);
-            lock (TailLines) { TailLines.Add(line); if (TailLines.Count > 12) TailLines.RemoveAt(0); }
+            lock (TailLines) { TailLines.Add(line); if (TailLines.Count > 40) TailLines.RemoveAt(0); }
             if (Line != null) Line(line, isErr);
         }
 
