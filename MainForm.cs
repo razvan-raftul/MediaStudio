@@ -230,9 +230,9 @@ namespace MediaStudio
             cancelBtn.Enabled = false;
             string msg;
             if (jobsFailed == 0) msg = jobsTotal > 1 ? "Gata. Toate cele " + jobsTotal + " operațiuni s-au terminat cu succes." : "Gata. Operațiunea s-a terminat cu succes.";
-            if (jobsDone > 0 && !string.IsNullOrEmpty(runFolder)) msg += " Rezultatul e în Media Studio, în folderul " + runFolder + ".";
             else if (jobsDone == 0) msg = jobsTotal > 1 ? "Toate operațiunile au eșuat. Detaliile sunt în jurnal." : "Operațiunea a eșuat. Detaliile sunt în jurnal.";
             else msg = "Terminat: " + jobsDone + " reușite, " + jobsFailed + " eșuate. Detaliile sunt în jurnal.";
+            if (jobsDone > 0 && !string.IsNullOrEmpty(runFolder)) msg += " Rezultatul e în Media Studio, în folderul " + runFolder + ".";
             Announce(msg);
             Log(msg);
             if (Settings.DoneSound) { if (jobsFailed == 0) SystemSounds.Asterisk.Play(); else SystemSounds.Hand.Play(); }
