@@ -14,18 +14,19 @@ namespace MediaStudio
         public string Image;
         public double Start, Duration;
         public int Position, Size;
-        public bool Fade;
+        public int Fade = 3; // 0 brusc, 1 început lin, 2 final lin, 3 amândouă, 4 apare lin peste poza dinainte
     }
 
     partial class MainForm
     {
         static readonly string[] OvPositions = { "Centru", "Stânga sus", "Dreapta sus", "Stânga jos", "Dreapta jos", "Sus, la mijloc", "Jos, la mijloc" };
+        static readonly string[] OvFades = { "Fără trecere lină, apare și dispare brusc", "Doar începutul lin, apare lin", "Doar finalul lin, dispare lin", "Începutul și finalul lin", "Apare lin peste poza dinainte, fără negru între ele" };
         static readonly string[] OvSizes = { "Tot ecranul, se vede videoclipul pe margini", "Tot ecranul, cu fundal negru (acoperă videoclipul)", "Jumătate din ecran", "O treime din ecran", "Un sfert din ecran", "Mărimea originală a pozei" };
 
         readonly List<Overlay> overlays = new List<Overlay>();
         TextBox ovVideo, ovImage, ovStart, ovDur;
         ComboBox ovPos, ovSize;
-        CheckBox ovFade;
+        ComboBox ovFade;
         ListBox ovList;
 
         void BuildOverlaySection(Builder b)
@@ -39,7 +40,7 @@ namespace MediaStudio
             ovDur = o.Text(null, "Stă pe ecran (secunde)", "5", false, "Câte secunde rămâne poza pe ecran.");
             ovPos = o.Combo(null, "Unde stă poza", OvPositions);
             ovSize = o.Combo(null, "Cât de mare e poza", OvSizes, 2);
-            ovFade = o.Check(null, "Apare și dispare lin (în jumătate de secundă)", true);
+            ovFade = o.Combo(null, "Cum apare și dispare poza (trecerea ține jumătate de secundă)", OvFades, 3);
             o.Buttons(
                 Builder.B("A&daugă poza în listă", (s, e) => AddOverlay(false)),
                 Builder.B("Înlocuiește poza selectată cu valorile de mai sus", (s, e) => AddOverlay(true)));
@@ -67,7 +68,7 @@ namespace MediaStudio
         {
             string secs = o.Duration == 1 ? "o secundă" : Sec(o.Duration) + " secunde";
             return (index + 1) + ". " + Path.GetFileName(o.Image) + ", apare la " + Clock(o.Start) + ", stă " + secs + ", " +
-                OvPositions[o.Position].ToLowerInvariant() + ", " + OvSizes[o.Size].ToLowerInvariant() + (o.Fade ? ", lin" : "");
+                OvPositions[o.Position].ToLowerInvariant() + ", " + OvSizes[o.Size].ToLowerInvariant() + ", " + OvFades[o.Fade].ToLowerInvariant();
         }
 
         void RefreshOverlays(int select)
@@ -86,7 +87,7 @@ namespace MediaStudio
             double st = ParseTime(ovStart.Text), du = ParseTime(ovDur.Text);
             if (st < 0) { Announce("Scrie la ce secundă apare poza."); ovStart.Focus(); return; }
             if (du <= 0) { Announce("Scrie câte secunde stă poza pe ecran."); ovDur.Focus(); return; }
-            var ov = new Overlay { Image = ovImage.Text.Trim(), Start = st, Duration = du, Position = ovPos.SelectedIndex, Size = ovSize.SelectedIndex, Fade = ovFade.Checked };
+            var ov = new Overlay { Image = ovImage.Text.Trim(), Start = st, Duration = du, Position = ovPos.SelectedIndex, Size = ovSize.SelectedIndex, Fade = Math.Max(0, ovFade.SelectedIndex) };
             if (replace) overlays[sel] = ov; else overlays.Add(ov);
             RefreshOverlays(-1);
             int idx = overlays.IndexOf(ov);
@@ -99,7 +100,7 @@ namespace MediaStudio
             if (i < 0 || i >= overlays.Count) return;
             var o = overlays[i];
             ovImage.Text = o.Image; ovStart.Text = Sec(o.Start); ovDur.Text = Sec(o.Duration);
-            ovPos.SelectedIndex = o.Position; ovSize.SelectedIndex = o.Size; ovFade.Checked = o.Fade;
+            ovPos.SelectedIndex = o.Position; ovSize.SelectedIndex = o.Size; ovFade.SelectedIndex = o.Fade;
         }
 
         /// <summary>Lățimea și înălțimea videoclipului așa cum se vede (ține cont de rotirea filmărilor de pe telefon).</summary>
@@ -155,9 +156,11 @@ namespace MediaStudio
 
             var j = new Job(Tool.Ffmpeg, "Poze peste videoclip: " + Path.GetFileName(input)) { ProbeForDuration = input };
             j.A("-hide_banner", Settings.Overwrite ? "-y" : "-n", "-progress", "pipe:1", "-nostats", "-i", input);
-            foreach (var o in overlays) j.A("-loop", "1", "-framerate", "30", "-t", Sec(o.Duration), "-i", o.Image);
+            double[] odur; bool[] fin, fout;
+            OverlayPlan(out odur, out fin, out fout);
+            for (int i = 0; i < overlays.Count; i++) j.A("-loop", "1", "-framerate", "30", "-t", Sec(odur[i]), "-i", overlays[i].Image);
 
-            var f = OverlayFilter(W, H, 1, "0:v");
+            var f = OverlayFilter(W, H, 1, "0:v", odur, fin, fout);
             j.A("-filter_complex", f.ToString(), "-map", "[vout]", "-map", "0:a?",
                 "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "copy");
             if (ext == ".mp4" || ext == ".mov" || ext == ".m4v") j.A("-movflags", "+faststart");
@@ -165,8 +168,30 @@ namespace MediaStudio
             return j;
         }
 
+        /// <summary>Cât stă fiecare poză de fapt și unde are trecere lină. La „apare lin peste poza dinainte”, poza dinainte mai stă jumătate de secundă, fără să se stingă, ca noua poză să apară peste ea.</summary>
+        void OverlayPlan(out double[] dur, out bool[] fin, out bool[] fout)
+        {
+            int n = overlays.Count;
+            dur = new double[n]; fin = new bool[n]; fout = new bool[n];
+            for (int i = 0; i < n; i++)
+            {
+                var o = overlays[i];
+                dur[i] = o.Duration;
+                fin[i] = o.Fade == 1 || o.Fade == 3 || o.Fade == 4;
+                fout[i] = o.Fade == 2 || o.Fade == 3;
+            }
+            for (int i = 1; i < n; i++)
+            {
+                if (overlays[i].Fade != 4) continue;
+                double fd = Math.Min(0.5, overlays[i].Duration / 3);
+                double need = overlays[i].Start + fd - overlays[i - 1].Start;
+                if (need > dur[i - 1]) dur[i - 1] = need;
+                fout[i - 1] = false;
+            }
+        }
+
         /// <summary>Lanțul de filtre care pune pozele, pe rând, peste imaginea de bază. Pozele încep de la intrarea firstInput.</summary>
-        StringBuilder OverlayFilter(int W, int H, int firstInput, string baseLabel)
+        StringBuilder OverlayFilter(int W, int H, int firstInput, string baseLabel, double[] dur, bool[] fin, bool[] fout)
         {
             var f = new StringBuilder();
             string prev = baseLabel;
@@ -184,11 +209,9 @@ namespace MediaStudio
                     case 4: f.Append("scale=" + (W / 4) + ":" + (H / 4) + ":force_original_aspect_ratio=decrease,"); break;
                 }
                 f.Append("format=rgba");
-                if (o.Fade)
-                {
-                    double fd = Math.Min(0.5, o.Duration / 3);
-                    f.Append(",fade=t=in:st=0:d=" + Sec(fd) + ":alpha=1,fade=t=out:st=" + Sec(o.Duration - fd) + ":d=" + Sec(fd) + ":alpha=1");
-                }
+                double fdi = Math.Min(0.5, o.Duration / 3), fdo = Math.Min(0.5, dur[i] / 3);
+                if (fin[i]) f.Append(",fade=t=in:st=0:d=" + Sec(fdi) + ":alpha=1");
+                if (fout[i]) f.Append(",fade=t=out:st=" + Sec(dur[i] - fdo) + ":d=" + Sec(fdo) + ":alpha=1");
                 f.Append(",setpts=PTS-STARTPTS+" + Sec(o.Start) + "/TB[p" + n + "];");
 
                 bool full = o.Size <= 1;
@@ -205,7 +228,7 @@ namespace MediaStudio
                     default: x = "(W-w)/2"; y = "(H-h)/2"; break;
                 }
                 string label = i == overlays.Count - 1 ? "vout" : "v" + n;
-                f.Append("[" + prev + "][p" + n + "]overlay=x=" + x + ":y=" + y + ":eof_action=pass:enable='between(t," + Sec(o.Start) + "," + Sec(o.Start + o.Duration) + ")'[" + label + "]");
+                f.Append("[" + prev + "][p" + n + "]overlay=x=" + x + ":y=" + y + ":eof_action=pass:enable='between(t," + Sec(o.Start) + "," + Sec(o.Start + dur[i]) + ")'[" + label + "]");
                 if (i < overlays.Count - 1) f.Append(";");
                 prev = label;
             }
@@ -227,8 +250,10 @@ namespace MediaStudio
             var j = new Job(Tool.Ffmpeg, "Poze pe sunet: " + Path.GetFileName(input)) { DurationSeconds = dur };
             j.A("-hide_banner", Settings.Overwrite ? "-y" : "-n", "-progress", "pipe:1", "-nostats", "-i", input,
                 "-f", "lavfi", "-i", "color=c=black:s=" + W + "x" + H + ":r=30:d=" + Sec(dur));
-            foreach (var o in overlays) j.A("-loop", "1", "-framerate", "30", "-t", Sec(o.Duration), "-i", o.Image);
-            var f = OverlayFilter(W, H, 2, "1:v");
+            double[] odur; bool[] fin, fout;
+            OverlayPlan(out odur, out fin, out fout);
+            for (int i = 0; i < overlays.Count; i++) j.A("-loop", "1", "-framerate", "30", "-t", Sec(odur[i]), "-i", overlays[i].Image);
+            var f = OverlayFilter(W, H, 2, "1:v", odur, fin, fout);
             j.A("-filter_complex", f.ToString(), "-map", "[vout]", "-map", "0:a:0",
                 "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p", "-r", "30",
                 "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", outp);
