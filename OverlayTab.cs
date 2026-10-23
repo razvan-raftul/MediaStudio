@@ -91,7 +91,17 @@ namespace MediaStudio
             if (replace) overlays[sel] = ov; else overlays.Add(ov);
             RefreshOverlays(-1);
             int idx = overlays.IndexOf(ov);
-            Announce((replace ? "Am înlocuit: " : "Am adăugat: ") + Describe(ov, idx) + ". În listă sunt " + overlays.Count + " poze.");
+            string next = "";
+            if (!replace)
+            {
+                // câmpul Poză se golește pentru următoarea, iar „Apare la” trece la secunda la care se termină ultima poză
+                double end = overlays.Max(x => x.Start + x.Duration);
+                ovImage.Text = "";
+                ovStart.Text = Sec(end);
+                next = " Următoarea poză apare la " + Clock(end) + ".";
+            }
+            Announce((replace ? "Am înlocuit: " : "Am adăugat: ") + Describe(ov, idx) + ". În listă sunt " + overlays.Count + " poze." + next);
+            if (!replace) ovImage.Focus();
         }
 
         void LoadOverlay()
