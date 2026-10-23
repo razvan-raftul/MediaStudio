@@ -30,9 +30,10 @@ namespace MediaStudio
 
         void BuildOverlaySection(Builder b)
         {
-            var o = b.Section("Poze peste videoclip", false);
-            o.Note("Alegi videoclipul, apoi pentru fiecare poză: fișierul, la ce secundă apare, câte secunde stă, unde stă și cât de mare e. Apeși Adaugă poza în listă. Poți pune oricâte poze. La sfârșit apeși Pune pozele pe videoclip.");
-            ovVideo = o.Path("ovVideo", "&Videoclip", PathKind.OpenFile, Dialogs.VideoFilter);
+            var o = b.Section("Poze peste videoclip sau peste un sunet", false);
+            o.Note("Alegi un videoclip sau un sunet, de exemplu un mp3. Apoi pentru fiecare poză: fișierul, la ce secundă apare, câte secunde stă, unde stă și cât de mare e. Apeși Adaugă poza în listă. Poți pune oricâte poze. La sfârșit apeși Pune pozele. Dacă ai ales un sunet, iese un videoclip mp4 cu mărimea primei poze, iar unde nu e nicio poză ecranul e negru.");
+            ovVideo = o.Path("ovVideo", "&Videoclip sau sunet", PathKind.OpenFile, Dialogs.MediaFilter);
+            ovVideo.TextChanged += (s, e) => { if (ovSize != null && IsAudioExt(ovVideo.Text)) ovSize.SelectedIndex = 1; };
             ovImage = o.Path(null, "&Poză", PathKind.OpenFile, Dialogs.ImageFilter);
             ovStart = o.Text(null, "Apare la (secunde sau mm:ss)", "0", false, "De exemplu 5 înseamnă secunda 5, iar 1:30 înseamnă minutul 1 și 30 de secunde.");
             ovDur = o.Text(null, "Stă pe ecran (secunde)", "5", false, "Câte secunde rămâne poza pe ecran.");
@@ -42,7 +43,7 @@ namespace MediaStudio
             o.Buttons(
                 Builder.B("A&daugă poza în listă", (s, e) => AddOverlay(false)),
                 Builder.B("Înlocuiește poza selectată cu valorile de mai sus", (s, e) => AddOverlay(true)));
-            ovList = o.List(null, "Pozele puse pe videoclip", 120);
+            ovList = o.List(null, "Pozele puse", 120);
             ovList.SelectedIndexChanged += (s, e) => LoadOverlay();
             o.Buttons(
                 Builder.B("Elimină poza selectată", (s, e) =>
@@ -53,7 +54,7 @@ namespace MediaStudio
                 }),
                 Builder.B("Golește lista de poze", (s, e) => { overlays.Clear(); RefreshOverlays(-1); Announce("Lista de poze e goală."); }));
             ovOut = o.Path("ovOut", "Fișier rezultat", PathKind.SaveFile, Dialogs.VideoFilter, "");
-            o.Buttons(Builder.B("Pune po&zele pe videoclip", (s, e) => Run(OverlayJob())));
+            o.Buttons(Builder.B("Pune po&zele", (s, e) => Run(OverlayJob())));
         }
 
         static string Clock(double s)
@@ -121,12 +122,31 @@ namespace MediaStudio
             return w > 0 && h > 0;
         }
 
+        static readonly string[] AudioExts = { ".mp3", ".m4a", ".aac", ".wav", ".flac", ".ogg", ".opus", ".wma", ".ac3", ".mka" };
+
+        static bool IsAudioExt(string file)
+        {
+            try { return AudioExts.Contains(Path.GetExtension(file.Trim()).ToLowerInvariant()); } catch { return false; }
+        }
+
+        /// <summary>Adevărat dacă fișierul are sunet, dar nicio imagine în mișcare (coperta unui mp3 nu se pune).</summary>
+        static bool IsAudioOnly(string file)
+        {
+            if (IsAudioExt(file)) return true;
+            var v = Runner.Capture(Tool.Ffprobe, "-v error -select_streams v -show_entries stream_disposition=attached_pic -of csv=p=0 " + Runner.Quote(file), 15000);
+            if (v == null) return false;
+            foreach (var l in v.Replace("\r", "").Split('\n')) if (l.Trim() == "0") return false;
+            var a = Runner.Capture(Tool.Ffprobe, "-v error -select_streams a -show_entries stream=index -of csv=p=0 " + Runner.Quote(file), 15000);
+            return a != null && a.Trim().Length > 0;
+        }
+
         Job OverlayJob()
         {
-            if (!Need(ovVideo.Text, "videoclipul")) return null;
+            if (!Need(ovVideo.Text, "videoclipul sau sunetul")) return null;
             if (overlays.Count == 0) { Announce("Adaugă cel puțin o poză în listă."); return null; }
             foreach (var o in overlays) if (!File.Exists(o.Image)) { Announce("Nu găsesc poza " + o.Image + "."); return null; }
             var input = ovVideo.Text.Trim();
+            if (IsAudioOnly(input)) return OverlayAudioJob(input);
             int W, H;
             if (!ProbeSize(input, out W, out H)) { ShowError("Nu pot afla mărimea videoclipului. Verifică dacă FFprobe e configurat în Setări și dacă fișierul e un videoclip."); return null; }
 
@@ -138,13 +158,24 @@ namespace MediaStudio
             j.A("-hide_banner", Settings.Overwrite ? "-y" : "-n", "-progress", "pipe:1", "-nostats", "-i", input);
             foreach (var o in overlays) j.A("-loop", "1", "-framerate", "30", "-t", Sec(o.Duration), "-i", o.Image);
 
+            var f = OverlayFilter(W, H, 1, "0:v");
+            j.A("-filter_complex", f.ToString(), "-map", "[vout]", "-map", "0:a?",
+                "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "copy");
+            if (ext == ".mp4" || ext == ".mov" || ext == ".m4v") j.A("-movflags", "+faststart");
+            j.A(outp);
+            return j;
+        }
+
+        /// <summary>Lanțul de filtre care pune pozele, pe rând, peste imaginea de bază. Pozele încep de la intrarea firstInput.</summary>
+        StringBuilder OverlayFilter(int W, int H, int firstInput, string baseLabel)
+        {
             var f = new StringBuilder();
-            string prev = "0:v";
+            string prev = baseLabel;
             for (int i = 0; i < overlays.Count; i++)
             {
                 var o = overlays[i];
                 int n = i + 1;
-                f.Append("[" + n + ":v]");
+                f.Append("[" + (firstInput + i) + ":v]");
                 switch (o.Size)
                 {
                     case 0: f.Append("scale=" + W + ":" + H + ":force_original_aspect_ratio=decrease,"); break;
@@ -180,10 +211,28 @@ namespace MediaStudio
                 prev = label;
             }
 
-            j.A("-filter_complex", f.ToString(), "-map", "[vout]", "-map", "0:a?",
-                "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "copy");
-            if (ext == ".mp4" || ext == ".mov" || ext == ".m4v") j.A("-movflags", "+faststart");
-            j.A(outp);
+            return f;
+        }
+
+        /// <summary>Pozele puse pe un sunet: fundal negru cu mărimea primei poze, cât ține sunetul, și pozele peste el.</summary>
+        Job OverlayAudioJob(string input)
+        {
+            double dur = Runner.ProbeDuration(input);
+            if (dur <= 0) { ShowError("Nu pot afla cât durează sunetul. Verifică dacă FFprobe e configurat în Setări și dacă fișierul e un sunet."); return null; }
+            int W, H;
+            if (!ProbeSize(overlays[0].Image, out W, out H)) { ShowError("Nu pot afla mărimea primei poze: " + Path.GetFileName(overlays[0].Image) + "."); return null; }
+            double k = Math.Min(1.0, 1920.0 / Math.Max(W, H));
+            W = Math.Max(2, (int)(W * k) / 2 * 2); H = Math.Max(2, (int)(H * k) / 2 * 2);
+
+            var outp = ovOut.Text.Trim().Length > 0 ? ovOut.Text.Trim() : OutPath(input, null, " (cu poze)", ".mp4");
+            var j = new Job(Tool.Ffmpeg, "Poze pe sunet: " + Path.GetFileName(input)) { DurationSeconds = dur };
+            j.A("-hide_banner", Settings.Overwrite ? "-y" : "-n", "-progress", "pipe:1", "-nostats", "-i", input,
+                "-f", "lavfi", "-i", "color=c=black:s=" + W + "x" + H + ":r=30:d=" + Sec(dur));
+            foreach (var o in overlays) j.A("-loop", "1", "-framerate", "30", "-t", Sec(o.Duration), "-i", o.Image);
+            var f = OverlayFilter(W, H, 2, "1:v");
+            j.A("-filter_complex", f.ToString(), "-map", "[vout]", "-map", "0:a:0",
+                "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p", "-r", "30",
+                "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", outp);
             return j;
         }
     }

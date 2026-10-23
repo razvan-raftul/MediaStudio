@@ -48,7 +48,7 @@ namespace MediaStudio
             AddTab("Tăiere", BuildCutTab);
             AddTab("Lipire", BuildJoinTab);
             AddTab("Împărțire", BuildSplitTab);
-            AddTab("Poze pe videoclip", BuildOverlayTab);
+            AddTab("Poze pe videoclip sau sunet", BuildOverlayTab);
             AddTab("Piste și subtitrări", BuildTracksTab);
             AddTab("Metadate", BuildMetadataTab);
             AddTab("Toate opțiunile", BuildOptionsTab);
@@ -279,7 +279,7 @@ namespace MediaStudio
         {
             MessageBox.Show(this,
                 "Scurtături:\r\n" +
-                "Control+1 Descărcare, Control+2 Conversie, Control+3 Volum, Control+4 Voce și instrumente, Control+5 Tăiere, Control+6 Lipire, Control+7 Împărțire, Control+8 Poze pe videoclip, Control+9 Piste și subtitrări, Control+0 Setări. Metadate și Toate opțiunile nu au scurtătură.\r\n" +
+                "Control+1 Descărcare, Control+2 Conversie, Control+3 Volum, Control+4 Voce și instrumente, Control+5 Tăiere, Control+6 Lipire, Control+7 Împărțire, Control+8 Poze pe videoclip sau sunet, Control+9 Piste și subtitrări, Control+0 Setări. Metadate și Toate opțiunile nu au scurtătură.\r\n" +
                 "Control+Tab și Control+Shift+Tab: tabul următor sau anterior.\r\n" +
                 "Control+L: jurnalul. Control+T: câmpul Stare.\r\n" +
                 "Alt cu litera subliniată: mergi direct la un câmp sau buton.\r\n" +
