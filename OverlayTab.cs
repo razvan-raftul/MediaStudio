@@ -14,13 +14,13 @@ namespace MediaStudio
         public string Image;
         public double Start, Duration;
         public int Position, Size;
-        public int Fade = 3; // 0 brusc, 1 început lin, 2 final lin, 3 amândouă, 4 apare lin peste poza dinainte
+        public int Fade = 0; // 0 implicit, 1 brusc, 2 început lin, 3 final lin, 4 amândouă, 5 apare lin peste poza dinainte
     }
 
     partial class MainForm
     {
         static readonly string[] OvPositions = { "Centru", "Stânga sus", "Dreapta sus", "Stânga jos", "Dreapta jos", "Sus, la mijloc", "Jos, la mijloc" };
-        static readonly string[] OvFades = { "Fără trecere lină, apare și dispare brusc", "Doar începutul lin, apare lin", "Doar finalul lin, dispare lin", "Începutul și finalul lin", "Apare lin peste poza dinainte, fără negru între ele" };
+        static readonly string[] OvFades = { "Implicit, programul alege trecerea cea mai frumoasă", "Fără trecere lină, apare și dispare brusc", "Doar începutul lin, apare lin", "Doar finalul lin, dispare lin", "Începutul și finalul lin", "Apare lin peste poza dinainte, fără negru între ele" };
         static readonly string[] OvSizes = { "Tot ecranul, se vede videoclipul pe margini", "Tot ecranul, cu fundal negru (acoperă videoclipul)", "Jumătate din ecran", "O treime din ecran", "Un sfert din ecran", "Mărimea originală a pozei" };
 
         readonly List<Overlay> overlays = new List<Overlay>();
@@ -40,7 +40,7 @@ namespace MediaStudio
             ovDur = o.Text(null, "Stă pe ecran (secunde)", "5", false, "Câte secunde rămâne poza pe ecran.");
             ovPos = o.Combo(null, "Unde stă poza", OvPositions);
             ovSize = o.Combo(null, "Cât de mare e poza", OvSizes, 2);
-            ovFade = o.Combo(null, "Cum apare și dispare poza (trecerea ține jumătate de secundă)", OvFades, 3);
+            ovFade = o.Combo(null, "Cum apare și dispare poza (trecerea ține jumătate de secundă)", OvFades, 0);
             o.Buttons(
                 Builder.B("A&daugă poza în listă", (s, e) => AddOverlay(false)),
                 Builder.B("Înlocuiește poza selectată cu valorile de mai sus", (s, e) => AddOverlay(true)));
@@ -173,16 +173,33 @@ namespace MediaStudio
         {
             int n = overlays.Count;
             dur = new double[n]; fin = new bool[n]; fout = new bool[n];
+            var mode = new int[n];
             for (int i = 0; i < n; i++)
             {
                 var o = overlays[i];
                 dur[i] = o.Duration;
-                fin[i] = o.Fade == 1 || o.Fade == 3 || o.Fade == 4;
-                fout[i] = o.Fade == 2 || o.Fade == 3;
+                int m = o.Fade;
+                if (m == 0)
+                {
+                    // Implicit: lipită de poza dinainte, se topește peste ea; prima poză de la secunda 0 pornește direct, fără negru;
+                    // altfel apare lin. Se stinge lin doar dacă după ea nu urmează imediat altă poză.
+                    bool lipitaInainte = i > 0 && o.Start <= overlays[i - 1].Start + overlays[i - 1].Duration + 0.05;
+                    bool lipitaDupa = i < n - 1 && overlays[i + 1].Start <= o.Start + o.Duration + 0.05;
+                    if (lipitaInainte) mode[i] = 5;
+                    else fin[i] = o.Start > 0.01;
+                    fout[i] = !lipitaDupa;
+                }
+                else
+                {
+                    mode[i] = m;
+                    fin[i] = m == 2 || m == 4;
+                    fout[i] = m == 3 || m == 4;
+                }
+                if (mode[i] == 5) fin[i] = true;
             }
             for (int i = 1; i < n; i++)
             {
-                if (overlays[i].Fade != 4) continue;
+                if (mode[i] != 5) continue;
                 double fd = Math.Min(0.5, overlays[i].Duration / 3);
                 double need = overlays[i].Start + fd - overlays[i - 1].Start;
                 if (need > dur[i - 1]) dur[i - 1] = need;
