@@ -23,7 +23,7 @@ namespace MediaStudio
         static readonly string[] OvSizes = { "Tot ecranul, se vede videoclipul pe margini", "Tot ecranul, cu fundal negru (acoperă videoclipul)", "Jumătate din ecran", "O treime din ecran", "Un sfert din ecran", "Mărimea originală a pozei" };
 
         readonly List<Overlay> overlays = new List<Overlay>();
-        TextBox ovVideo, ovImage, ovStart, ovDur, ovOut;
+        TextBox ovVideo, ovImage, ovStart, ovDur;
         ComboBox ovPos, ovSize;
         CheckBox ovFade;
         ListBox ovList;
@@ -53,7 +53,6 @@ namespace MediaStudio
                     Announce("Poza a fost eliminată. Au rămas " + overlays.Count + ".");
                 }),
                 Builder.B("Golește lista de poze", (s, e) => { overlays.Clear(); RefreshOverlays(-1); Announce("Lista de poze e goală."); }));
-            ovOut = o.Path("ovOut", "Fișier rezultat", PathKind.SaveFile, Dialogs.VideoFilter, "");
             o.Buttons(Builder.B("Pune po&zele", (s, e) => Run(OverlayJob())));
         }
 
@@ -152,7 +151,7 @@ namespace MediaStudio
 
             var ext = Path.GetExtension(input).ToLowerInvariant();
             if (ext != ".mp4" && ext != ".mov" && ext != ".mkv" && ext != ".m4v") ext = ".mp4";
-            var outp = ovOut.Text.Trim().Length > 0 ? ovOut.Text.Trim() : OutPath(input, null, " (cu poze)", ext);
+            var outp = AutoOut(input, "Cu poze", "cu_poze", ext);
 
             var j = new Job(Tool.Ffmpeg, "Poze peste videoclip: " + Path.GetFileName(input)) { ProbeForDuration = input };
             j.A("-hide_banner", Settings.Overwrite ? "-y" : "-n", "-progress", "pipe:1", "-nostats", "-i", input);
@@ -224,7 +223,7 @@ namespace MediaStudio
             double k = Math.Min(1.0, 1920.0 / Math.Max(W, H));
             W = Math.Max(2, (int)(W * k) / 2 * 2); H = Math.Max(2, (int)(H * k) / 2 * 2);
 
-            var outp = ovOut.Text.Trim().Length > 0 ? ovOut.Text.Trim() : OutPath(input, null, " (cu poze)", ".mp4");
+            var outp = AutoOut(input, "Cu poze", "cu_poze", ".mp4");
             var j = new Job(Tool.Ffmpeg, "Poze pe sunet: " + Path.GetFileName(input)) { DurationSeconds = dur };
             j.A("-hide_banner", Settings.Overwrite ? "-y" : "-n", "-progress", "pipe:1", "-nostats", "-i", input,
                 "-f", "lavfi", "-i", "color=c=black:s=" + W + "x" + H + ":r=30:d=" + Sec(dur));

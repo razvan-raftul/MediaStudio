@@ -8,7 +8,7 @@ namespace MediaStudio
 {
     partial class MainForm
     {
-        TextBox mdIn, mdTitle, mdArtist, mdAlbum, mdAlbumArtist, mdYear, mdGenre, mdTrack, mdComment, mdCover, mdOut;
+        TextBox mdIn, mdTitle, mdArtist, mdAlbum, mdAlbumArtist, mdYear, mdGenre, mdTrack, mdComment, mdCover;
         CheckBox mdClear, mdRemoveCover;
 
         void BuildMetadataTab(TabPage page)
@@ -27,7 +27,6 @@ namespace MediaStudio
             mdCover = b.Path(null, "Imagine de cop&ertă", PathKind.OpenFile, Dialogs.ImageFilter);
             mdRemoveCover = b.Check(null, "Elimină coperta existentă");
             mdClear = b.Check(null, "Șterge toate celelalte metadate");
-            mdOut = b.Path(null, "Fișier rezultat (gol = lângă original)", PathKind.SaveFile, Dialogs.MediaFilter);
             b.Buttons(Builder.B("&Salvează metadatele", (s, e) => Run(MetadataJob())));
         }
 
@@ -60,7 +59,7 @@ namespace MediaStudio
             if (!Need(mdIn.Text, "un fișier")) return null;
             var input = mdIn.Text.Trim();
             var ext = Path.GetExtension(input).ToLowerInvariant();
-            var outp = mdOut.Text.Trim().Length > 0 ? mdOut.Text.Trim() : OutPath(input, null, " (metadate)", ext);
+            var outp = AutoOut(input, "Metadate", "metadate", ext);
             var j = new Job(Tool.Ffmpeg, "Metadate: " + Path.GetFileName(input));
             j.A("-hide_banner", Settings.Overwrite ? "-y" : "-n", "-i", input);
             bool cover = mdCover.Text.Trim().Length > 0 && File.Exists(mdCover.Text.Trim());

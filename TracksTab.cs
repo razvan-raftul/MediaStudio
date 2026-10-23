@@ -19,7 +19,7 @@ namespace MediaStudio
 
     partial class MainForm
     {
-        TextBox tkIn, tkOther, tkLang, tkSubFile, tkOut;
+        TextBox tkIn, tkOther, tkLang, tkSubFile;
         ListBox tkStreams;
         ComboBox tkAction, tkSubAction, tkSubStyle;
         NumericUpDown tkSubSize;
@@ -55,7 +55,6 @@ namespace MediaStudio
             tkSubStyle = su.Combo(null, "Stil la ardere", new[] { "Alb cu contur negru", "Galben cu contur negru", "Alb pe fundal negru" });
             su.Buttons(Builder.B("Execută operațiunea cu subtitrarea", (s, e) => Run(SubtitleJob())));
 
-            tkOut = b.Path(null, "Fișier rezultat (gol = lângă original)", PathKind.SaveFile, Dialogs.MediaFilter);
         }
 
         List<StreamInfo> Probe(string file)
@@ -123,7 +122,7 @@ namespace MediaStudio
 
         string TkOut(string input, string suffix, string ext)
         {
-            return tkOut.Text.Trim().Length > 0 ? tkOut.Text.Trim() : OutPath(input, null, suffix, ext ?? Path.GetExtension(input));
+            return AutoOut(input, "Piste și subtitrări", Tag(suffix), ext ?? Path.GetExtension(input));
         }
 
         Job TrackJob()
@@ -187,7 +186,7 @@ namespace MediaStudio
             {
                 if (!Need(tkSubFile.Text, "fișierul de subtitrare")) return null;
                 var sf = tkSubFile.Text.Trim();
-                var outSub = tkOut.Text.Trim().Length > 0 ? tkOut.Text.Trim() : OutPath(sf, null, "", "srt");
+                var outSub = AutoOut(sf, "Piste și subtitrări", "", "srt");
                 return new Job(Tool.Ffmpeg, "Conversie subtitrare: " + Path.GetFileName(sf)).A("-hide_banner", "-y", "-i", sf, outSub);
             }
             if (!Need(input, "fișierul video din câmpul Fișier")) return null;

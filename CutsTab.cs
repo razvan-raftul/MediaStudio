@@ -12,7 +12,7 @@ namespace MediaStudio
     {
         // bucăți marcate: Item1 = început, Item2 = sfârșit (-1 = până la final)
         readonly List<Tuple<double, double>> cuts = new List<Tuple<double, double>>();
-        TextBox cuIn, cuStart, cuEnd, cuOut;
+        TextBox cuIn, cuStart, cuEnd;
         ComboBox cuMode;
         ListBox cuList;
         CheckBox cuJointFade;
@@ -46,7 +46,6 @@ namespace MediaStudio
             cuJointFade = c.Check("cuJointFade", "Trecere lină la fiecare tăietură (imaginea și sunetul se sting și revin în 0,3 secunde)");
             cuFadeIn = c.Number("cuFadeIn", "Fade in la început (secunde, 0 înseamnă fără)", 0, 60, 0, 0.5m, 1);
             cuFadeOut = c.Number("cuFadeOut", "Fade out la sfârșit (secunde, 0 înseamnă fără)", 0, 60, 0, 0.5m, 1);
-            cuOut = c.Path("cuOut", "Fișier rezultat", PathKind.SaveFile, Dialogs.MediaFilter, "");
             c.Buttons(Builder.B("Apl&ică tăieturile", (s, e) => Run(CutsJob())));
         }
 
@@ -134,7 +133,7 @@ namespace MediaStudio
             double total = keep.Sum(k => k[1] - k[0]);
             var ext = Path.GetExtension(input).ToLowerInvariant();
             if (hasV && ext != ".mp4" && ext != ".mov" && ext != ".mkv" && ext != ".m4v") ext = ".mp4";
-            var outp = cuOut.Text.Trim().Length > 0 ? cuOut.Text.Trim() : OutPath(input, null, " (editat)", ext);
+            var outp = marked.Count > 0 ? AutoOut(input, "Tăiate", "taiat", ext) : AutoOut(input, "Fade", "fade", ext);
 
             var f = new StringBuilder();
             double jf = cuJointFade.Checked ? 0.3 : 0;

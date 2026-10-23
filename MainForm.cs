@@ -167,6 +167,7 @@ namespace MediaStudio
             queue.Clear();
             foreach (var j in list) queue.Enqueue(j);
             jobsTotal = list.Count; jobsDone = 0; jobsFailed = 0;
+            runFolder = LastOutFolder; LastOutFolder = null;
             cancelBtn.Enabled = true;
             StartNext();
             return true;
@@ -229,6 +230,7 @@ namespace MediaStudio
             cancelBtn.Enabled = false;
             string msg;
             if (jobsFailed == 0) msg = jobsTotal > 1 ? "Gata. Toate cele " + jobsTotal + " operațiuni s-au terminat cu succes." : "Gata. Operațiunea s-a terminat cu succes.";
+            if (jobsDone > 0 && !string.IsNullOrEmpty(runFolder)) msg += " Rezultatul e în Media Studio, în folderul " + runFolder + ".";
             else if (jobsDone == 0) msg = jobsTotal > 1 ? "Toate operațiunile au eșuat. Detaliile sunt în jurnal." : "Operațiunea a eșuat. Detaliile sunt în jurnal.";
             else msg = "Terminat: " + jobsDone + " reușite, " + jobsFailed + " eșuate. Detaliile sunt în jurnal.";
             Announce(msg);
@@ -291,6 +293,29 @@ namespace MediaStudio
         // ------------------------------------------------------------------ utilitare comune
         public static string Sel(ComboBox c) { return c.Text.Trim(); }
         public static string FirstWord(string s) { s = (s ?? "").Trim(); int i = s.IndexOfAny(new[] { ' ', '—' }); return i > 0 ? s.Substring(0, i) : s; }
+
+        /// <summary>Ultimul folder de salvare ales automat (îl spun la „Gata”).</summary>
+        public static string LastOutFolder;
+        string runFolder;
+
+        /// <summary>Unde se salvează rezultatul: Documente\Media Studio\&lt;folder&gt;\nume_eticheta.ext. Dacă există deja, adaug _2, _3...</summary>
+        public static string AutoOut(string input, string folderName, string tag, string ext)
+        {
+            var dir = Path.Combine(Settings.DownloadFolder, folderName);
+            try { Directory.CreateDirectory(dir); } catch { }
+            ext = "." + (ext ?? "").TrimStart('.');
+            var name = Path.GetFileNameWithoutExtension(input) + (string.IsNullOrEmpty(tag) ? "" : "_" + tag);
+            var p = Path.Combine(dir, name + ext);
+            for (int n = 2; File.Exists(p) || string.Equals(p, input, StringComparison.OrdinalIgnoreCase); n++) p = Path.Combine(dir, name + "_" + n + ext);
+            LastOutFolder = folderName;
+            return p;
+        }
+
+        /// <summary>„ (pista 2)” devine „pista_2”, pentru numele fișierelor.</summary>
+        public static string Tag(string suffix)
+        {
+            return (suffix ?? "").Trim().Trim('(', ')').Trim().Replace(' ', '_').Replace("%", "");
+        }
 
         public static string OutPath(string input, string folder, string suffix, string ext)
         {

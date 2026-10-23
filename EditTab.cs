@@ -13,9 +13,8 @@ namespace MediaStudio
     {
         readonly Dictionary<string, Control> edFields = new Dictionary<string, Control>();
         ListBox ccFiles;
-        TextBox ccOut;
         ComboBox ccMode;
-        TextBox spIn, spLen, spOut;
+        TextBox spIn, spLen;
 
         void BuildCutTab(TabPage page) { BuildCutsSection(new Builder(page, edFields)); }
         void BuildOverlayTab(TabPage page) { BuildOverlaySection(new Builder(page, edFields)); }
@@ -31,7 +30,6 @@ namespace MediaStudio
                 Builder.B("Mută în jos", (s, e) => MoveItem(ccFiles, 1)),
                 Builder.B("Elimină", (s, e) => RemoveSelected(ccFiles)));
             ccMode = c.Combo("ccMode", "Mod", new[] { "Rapid (fișierele trebuie să aibă același format)", "Sigur (merge cu orice fișiere, durează mai mult)" }, 1);
-            ccOut = c.Path("ccOut", "Fișier rezultat (gol înseamnă în folderul Media Studio)", PathKind.SaveFile, Dialogs.MediaFilter);
             c.Buttons(Builder.B("&Lipește", (s, e) => Run(ConcatJob())));
         }
 
@@ -40,7 +38,6 @@ namespace MediaStudio
             var sp = new Builder(page, edFields).Section("Împărțire în bucăți egale", false);
             spIn = sp.Path("spIn", "&Fișier de împărțit", PathKind.OpenFile, Dialogs.MediaFilter);
             spLen = sp.Text("spLen", "Lungimea unei bucăți (secunde, mm:ss sau hh:mm:ss)", "10:00");
-            spOut = sp.Path("spOut", "Folder pentru bucăți (gol înseamnă folderul Media Studio)", PathKind.Folder);
             sp.Buttons(Builder.B("Îm&parte", (s, e) => Run(SplitJob())));
         }
 
@@ -72,7 +69,7 @@ namespace MediaStudio
         {
             var files = ccFiles.Items.Cast<string>().ToList();
             if (files.Count < 2) { Announce("Adaugă cel puțin două fișiere."); return null; }
-            var outp = ccOut.Text.Trim().Length > 0 ? ccOut.Text.Trim() : OutPath(files[0], null, " (unit)", Path.GetExtension(files[0]));
+            var outp = AutoOut(files[0], "Lipite", "lipit", Path.GetExtension(files[0]));
             var j = new Job(Tool.Ffmpeg, "Unire: " + files.Count + " fișiere");
             j.A("-hide_banner", Settings.Overwrite ? "-y" : "-n", "-progress", "pipe:1", "-nostats");
             if (ccMode.SelectedIndex == 0)
@@ -102,10 +99,9 @@ namespace MediaStudio
             double len = ParseTime(spLen.Text);
             if (len <= 0) { Announce("Scrie lungimea unei bucăți."); return null; }
             var input = spIn.Text.Trim();
-            var dir = spOut.Text.Trim().Length > 0 ? spOut.Text.Trim() : Settings.DownloadFolder;
-            Directory.CreateDirectory(dir);
             var ext = Path.GetExtension(input);
-            var pattern = Path.Combine(dir, Path.GetFileNameWithoutExtension(input) + " - partea %03d" + ext);
+            var first = AutoOut(input, "Împărțite", "partea_000", ext);
+            var pattern = Path.Combine(Path.GetDirectoryName(first), Path.GetFileNameWithoutExtension(first).Replace("partea_000", "partea_%03d") + ext);
             var j = new Job(Tool.Ffmpeg, "Împărțire: " + Path.GetFileName(input)) { ProbeForDuration = input };
             j.A("-hide_banner", "-y", "-progress", "pipe:1", "-nostats", "-i", input, "-map", "0", "-c", "copy", "-f", "segment", "-segment_time", Sec(len), "-reset_timestamps", "1", pattern);
             return j;

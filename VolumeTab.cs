@@ -12,7 +12,6 @@ namespace MediaStudio
         Label volFilesLabel;
         VolumeSlider volSlider, volLevel;
         CheckBox volEqual;
-        TextBox volOutFolder;
         Action volSync;
 
         /// <summary>Tabul Volum: unul sau mai multe fișiere, un glisor de volum, Exportă.</summary>
@@ -67,7 +66,6 @@ namespace MediaStudio
             volEqual.CheckedChanged += (s, e) => { volMode(); Announce(volEqual.Checked ? "Egalizare pornită. Alege nivelul comun." : "Egalizare oprită. Alege volumul."); };
             volMode();
 
-            volOutFolder = b.Path("volOut", "Folder de &salvare", PathKind.Folder, null, Settings.DownloadFolder);
             var exp = b.Buttons(Builder.B("&Exportă", (s, e) =>
             {
                 if (volFiles.Items.Count == 0) { Announce("Adaugă întâi fișierele."); return; }
@@ -165,7 +163,7 @@ namespace MediaStudio
         {
             var ext = Path.GetExtension(input).TrimStart('.').ToLowerInvariant();
             if (ext.Length == 0) ext = "mp3";
-            var outp = OutPath(input, volOutFolder.Text.Trim(), suffix, ext);
+            var outp = AutoOut(input, "Volum", Tag(suffix), ext);
             bool audioOnly = AudioFormats.Contains(ext);
             // sunetul trece prin filtru; imaginea (și coperta la mp3) și subtitrările se copiază neschimbate
             j.A("-hide_banner", Settings.Overwrite ? "-y" : "-n", "-progress", "pipe:1", "-nostats", "-i", input, "-map", "0:v?", "-map", "0:a");

@@ -12,7 +12,6 @@ namespace MediaStudio
         readonly Dictionary<string, Control> cvFields = new Dictionary<string, Control>();
         ListBox cvFiles;
         Label cvFilesLabel;
-        TextBox cvOutFolder;
         ComboBox cvFormat;
         Action cvSync;
 
@@ -49,7 +48,6 @@ namespace MediaStudio
             cvFormat = b.Combo("format", "Î&n", VideoFormats.Concat(AudioFormats), 0, false,
                 "Formatul în care se transformă fișierele. mp3, wav, flac și celelalte formate audio păstrează doar sunetul.");
             cvFormat.SelectedItem = "mp3";
-            cvOutFolder = b.Path("outFolder", "Folder de &salvare", PathKind.Folder, null, Settings.DownloadFolder);
             b.Buttons(Builder.B("Con&vertește", (s, e) =>
             {
                 if (cvFiles.Items.Count == 0) { Announce("Adaugă întâi fișierele de convertit."); return; }
@@ -105,7 +103,7 @@ namespace MediaStudio
         {
             var fmt = cvFormat.Text.Trim();
             bool audioOnly = AudioFormats.Contains(fmt);
-            var outp = OutPath(input, cvOutFolder.Text.Trim(), "", fmt);
+            var outp = AutoOut(input, "Convertite", "", fmt);
             var j = new Job(Tool.Ffmpeg, "Conversie: " + Path.GetFileName(input) + " în " + fmt) { ProbeForDuration = input };
             j.A("-hide_banner", Settings.Overwrite ? "-y" : "-n", "-progress", "pipe:1", "-nostats", "-i", input);
             if (audioOnly) j.A("-vn");
