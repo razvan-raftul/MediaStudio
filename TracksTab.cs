@@ -22,7 +22,7 @@ namespace MediaStudio
         TextBox tkIn, tkOther, tkLang, tkSubFile;
         ListBox tkStreams;
         ComboBox tkAction, tkSubAction, tkSubStyle;
-        NumericUpDown tkSubSize;
+        NumericUpDown tkSubSize, tkMixClip, tkMixAudio;
 
         void BuildTracksTab(TabPage page)
         {
@@ -39,8 +39,11 @@ namespace MediaStudio
                 "Înlocuiește tot sunetul cu un alt fișier audio",
                 "Adaugă un fișier audio ca pistă în plus",
                 "Fă pista selectată implicită",
-                "Setează limba pistei selectate" });
-            tkOther = p.Path(null, "Fișier audio (pentru înlocuire sau adăugare)", PathKind.OpenFile, Dialogs.AudioFilter);
+                "Setează limba pistei selectate",
+                "Amestecă un fișier audio peste sunetul clipului (se aud amândouă)" });
+            tkOther = p.Path(null, "Fișier audio (pentru înlocuire, adăugare sau amestec)", PathKind.OpenFile, Dialogs.AudioFilter);
+            tkMixClip = p.Number(null, "La amestec: volumul sunetului din clip (la sută, 0 înseamnă că nu se aude)", 0, 200, 30, 5);
+            tkMixAudio = p.Number(null, "La amestec: volumul fișierului audio (la sută)", 0, 200, 100, 5);
             tkLang = p.Text(null, "Cod limbă (de ex. ron, eng)", "ron", false, "Cod de limbă din trei litere.");
             p.Buttons(Builder.B("&Execută operațiunea", (s, e) => Run(TrackJob())));
 
@@ -131,7 +134,7 @@ namespace MediaStudio
             var input = tkIn.Text.Trim();
             var s = SelStream();
             int act = tkAction.SelectedIndex;
-            if ((act <= 2 || act >= 5) && s == null) { Announce("Apasă Analizează pistele și alege o pistă din listă."); return null; }
+            if ((act <= 2 || act == 5 || act == 6) && s == null) { Announce("Apasă Analizează pistele și alege o pistă din listă."); return null; }
             var j = new Job(Tool.Ffmpeg, tkAction.Text + ": " + Path.GetFileName(input)) { ProbeForDuration = input };
             j.A("-hide_banner", Settings.Overwrite ? "-y" : "-n", "-progress", "pipe:1", "-nostats", "-i", input);
             switch (act)
@@ -156,6 +159,26 @@ namespace MediaStudio
                     else j.A("-map", "0", "-map", "1:a", "-c", "copy");
                     if (Path.GetExtension(input).Equals(".mp4", StringComparison.OrdinalIgnoreCase)) { j.Args[j.Args.IndexOf("copy")] = "copy"; j.A("-c:a", "aac"); }
                     j.A(TkOut(input, act == 3 ? " (sunet înlocuit)" : " (pistă adăugată)", null));
+                    break;
+                case 7:
+                    {
+                        if (!Need(tkOther.Text, "fișierul audio")) return null;
+                        bool clipAudio = Probe(input).Any(x => x.Type == "audio");
+                        bool clipVideo = Probe(input).Any(x => x.Type == "video");
+                        string vc = Sec((double)tkMixClip.Value / 100), va = Sec((double)tkMixAudio.Value / 100);
+                        j.A("-i", tkOther.Text.Trim());
+                        string mix = clipAudio
+                            ? "[0:a:0]volume=" + vc + "[a0];[1:a:0]volume=" + va + "[a1];[a0][a1]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]"
+                            : "[1:a:0]volume=" + va + "[aout]";
+                        j.A("-filter_complex", mix);
+                        if (clipVideo) j.A("-map", "0:v:0", "-c:v", "copy");
+                        j.A("-map", "[aout]", "-c:a", "aac", "-b:a", "192k");
+                        if (!clipAudio) j.A("-shortest");
+                        var mext = Path.GetExtension(input).ToLowerInvariant();
+                        if (mext != ".mp4" && mext != ".mov" && mext != ".mkv" && mext != ".m4v") mext = clipVideo ? ".mp4" : ".m4a";
+                        if (mext != ".mkv") j.A("-movflags", "+faststart");
+                        j.A(AutoOut(input, "Amestecate", "amestec", mext));
+                    }
                     break;
                 case 5:
                     j.A("-map", "0", "-c", "copy");
