@@ -11,7 +11,7 @@ using System.Windows.Forms;
 namespace MediaStudio
 {
     /// <summary>
-    /// Tabul „Voce și instrumente”: desparte o piesă în voce, tobe, bas, chitară, pian și restul, face negativul
+    /// Tabul „Voce și instrumente”: piesa poate fi un fișier sau un link (se descarcă întâi cu yt-dlp). Desparte o piesă în voce, tobe, bas, chitară, pian și restul, face negativul
     /// (totul fără voce) și schimbă tonalitatea. Lucrul îl face separare.exe (Demucs și ffmpeg cu rubberband),
     /// care se descarcă singur prima dată, în subfolderul unelte\separare.
     /// </summary>
@@ -43,6 +43,7 @@ namespace MediaStudio
         string sepOutDir = "";
         readonly StringBuilder sepFiles = new StringBuilder();
         string sepError = "";
+        string sepTemp = "";          // folderul temporar cu piesa descărcată de pe internet (se șterge la final)
 
         static string SepDir { get { return Path.Combine(Tools.ToolDir, "separare"); } }
         static string SepExe { get { return Path.Combine(SepDir, "separare.exe"); } }
@@ -56,8 +57,8 @@ namespace MediaStudio
         void BuildSeparareTab(TabPage page)
         {
             var b = new Builder(page);
-            sepFile = b.Path(null, "P&iesa", PathKind.OpenFile, Dialogs.MediaFilter, "");
-            b.Note("Bifează ce păstrezi. Fiecare bifă iese într-un fișier separat. Dacă nu bifezi nimic și alegi doar tonalitatea, se mută toată piesa în tonalitatea nouă, cu același tempo.");
+            sepFile = b.Path(null, "P&iesa: fișier de pe calculator sau link (YouTube și altele)", PathKind.OpenFile, Dialogs.MediaFilter, "");
+            b.Note("Poți scrie sau lipi direct linkul piesei: o descarc eu, fac ce ai bifat, iar piesa descărcată o șterg la final, rămân doar rezultatele. Bifează ce păstrezi. Fiecare bifă iese într-un fișier separat. Dacă nu bifezi nimic și alegi doar tonalitatea, se mută toată piesa în tonalitatea nouă, cu același tempo.");
             sepChecks = SepElemente.Select(e => b.Check(null, e[1], e[0] == "negativ")).ToArray();
             sepTogether = b.Check(null, "Pune-le pe toate cele bifate împreună, într-un singur &fișier");
             sepSemi = b.Number(null, "&Tonalitatea, în semitonuri (de la minus 12 la 12; 0 o lasă la fel)", -12, 12, 0);
@@ -74,21 +75,112 @@ namespace MediaStudio
             return name;
         }
 
+        static bool SepEsteLink(string t)
+        {
+            t = t.Trim().ToLowerInvariant();
+            return t.StartsWith("http://") || t.StartsWith("https://") || t.StartsWith("www.") || t.StartsWith("youtu");
+        }
+
         void SepStart()
         {
             if (sepBusy) { Announce("Lucrez deja la o piesă. Apasă Oprește separarea dacă vrei s-o lași."); return; }
             if (runner.Running) { Announce("O operațiune rulează deja. Așteaptă să se termine sau oprește-o."); return; }
-            var input = sepFile.Text.Trim().Trim('"');
-            if (input.Length == 0 || !File.Exists(input)) { Announce("Alege întâi piesa."); sepFile.Focus(); return; }
+            var src = sepFile.Text.Trim().Trim('"');
+            bool link = SepEsteLink(src);
+            if (!link && (src.Length == 0 || !File.Exists(src))) { Announce("Alege întâi piesa sau scrie linkul ei."); sepFile.Focus(); return; }
+            int semi = (int)sepSemi.Value;
+            if (semi == 0 && !sepChecks.Any(c => c.Checked)) { Announce("Bifează ce vrei să păstrezi sau alege o tonalitate."); return; }
+            if (link && !File.Exists(Settings.YtdlpPath)) { ShowError(Tools.MissingText(Tool.Ytdlp)); return; }
+            sepBusy = true; sepStopped = false; sepLast = -1; sepFiles.Clear(); sepError = "";
+            cancelBtn.Enabled = true;
+            if (link) SepFetchSong(src.StartsWith("http") ? src : "https://" + src);
+            else SepPrepare(src);
+        }
+
+        /// <summary>Descarcă sunetul piesei de la link (yt-dlp) într-un folder temporar, apoi pornește separarea.</summary>
+        void SepFetchSong(string url)
+        {
+            sepTemp = Path.Combine(Path.GetTempPath(), "MediaStudio-piesa-" + Guid.NewGuid().ToString("N").Substring(0, 8));
+            Directory.CreateDirectory(sepTemp);
+            var a = new StringBuilder("--no-playlist --newline --no-part -f bestaudio/best -x --audio-format wav");
+            if (File.Exists(Settings.FfmpegPath)) a.Append(" --ffmpeg-location ").Append(Runner.Quote(Path.GetDirectoryName(Settings.FfmpegPath)));
+            a.Append(" -o ").Append(Runner.Quote(Path.Combine(sepTemp, "%(title)s.%(ext)s"))).Append(' ').Append(Runner.Quote(url));
+            Announce("Descarc piesa de pe internet.");
+            Log("");
+            Log("=== Voce și instrumente: descarc piesa ===");
+            Log("> " + Runner.Quote(Settings.YtdlpPath) + " " + a);
+            var psi = new ProcessStartInfo(Settings.YtdlpPath, a.ToString())
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8
+            };
+            int last = -1;
+            try
+            {
+                sepProc = new Process { StartInfo = psi, EnableRaisingEvents = true };
+                sepProc.OutputDataReceived += (s, e) =>
+                {
+                    if (e.Data == null) return;
+                    var line = e.Data;
+                    BeginInvoke((Action)(() =>
+                    {
+                        Log(line);
+                        // „[download]  45.3% of ...” -> anunț din 10 în 10
+                        var t = line.Trim();
+                        int i = t.IndexOf('%');
+                        if (t.StartsWith("[download]") && i > 10)
+                        {
+                            double p;
+                            if (double.TryParse(t.Substring(10, i - 10).Trim(), System.Globalization.NumberStyles.Float,
+                                                System.Globalization.CultureInfo.InvariantCulture, out p))
+                            {
+                                int bucket = (int)p / 10 * 10;
+                                if (bucket > last && bucket > 0 && bucket < 100) { last = bucket; Announce("Descarc piesa: " + bucket + "%", false); }
+                            }
+                        }
+                    }));
+                };
+                sepProc.ErrorDataReceived += (s, e) => { if (e.Data != null) { var l = e.Data; BeginInvoke((Action)(() => Log(l))); } };
+                sepProc.Exited += (s, e) => BeginInvoke((Action)(() => SepSongDone()));
+                sepProc.Start();
+                sepProc.BeginOutputReadLine();
+                sepProc.BeginErrorReadLine();
+            }
+            catch (Exception ex) { SepDone(null); ShowError("Nu am putut porni descărcarea piesei: " + ex.Message); }
+        }
+
+        void SepSongDone()
+        {
+            int code = -1;
+            try { sepProc.WaitForExit(); code = sepProc.ExitCode; } catch { }
+            sepProc = null;
+            FlushLog();
+            if (sepStopped) { SepDone("Oprit."); return; }
+            var gasite = Directory.Exists(sepTemp) ? Directory.GetFiles(sepTemp) : new string[0];
+            var piesa = gasite.FirstOrDefault(f => f.EndsWith(".wav", StringComparison.OrdinalIgnoreCase)) ?? gasite.FirstOrDefault();
+            if (code != 0 || piesa == null)
+            {
+                SepDone(null);
+                ShowError("Nu am putut descărca piesa de la link. Verifică linkul și internetul. Detaliile sunt în jurnal.");
+                return;
+            }
+            Announce("Am descărcat piesa: " + Path.GetFileNameWithoutExtension(piesa) + ".", false);
+            SepPrepare(piesa);
+        }
+
+        /// <summary>Pregătește comanda pentru separare.exe (piesa e acum un fișier) și o pornește; prima dată descarcă programul.</summary>
+        void SepPrepare(string input)
+        {
             int semi = (int)sepSemi.Value;
             string semn = semi != 0 ? " (tonalitate " + (semi > 0 ? "+" : "") + semi + ")" : "";
             var alese = SepElemente.Where((e, i) => sepChecks[i].Checked).ToList();
             var args = new StringBuilder();
             if (alese.Count == 0)
-            {
-                if (semi == 0) { Announce("Bifează ce vrei să păstrezi sau alege o tonalitate."); return; }
                 args.Append(" --element original ").Append(Runner.Quote("Tonalitate " + (semi > 0 ? "+" : "") + semi));
-            }
             else
                 foreach (var e in alese) args.Append(" --element ").Append(e[0]).Append(' ').Append(Runner.Quote(e[2] + semn));
             if (sepTogether.Checked && alese.Count > 1)
@@ -97,8 +189,6 @@ namespace MediaStudio
             sepOutDir = Path.Combine(Settings.DownloadFolder, "Separate", SepClean(titlu));
             string all = "--intrare " + Runner.Quote(input) + " --iesire " + Runner.Quote(sepOutDir) + " --semitonuri " + semi
                 + " --format " + sepFormat.Text.Trim() + args;
-            sepBusy = true; sepStopped = false; sepLast = -1; sepFiles.Clear(); sepError = "";
-            cancelBtn.Enabled = true;
             if (SepInstalled()) { SepRun(all, alese.Count > 0); return; }
             Announce("Prima dată se descarcă programul de separare, o singură dată. Se descarcă.");
             Task.Run(() => SepDownload()).ContinueWith(t => BeginInvoke((Action)(() =>
@@ -230,6 +320,11 @@ namespace MediaStudio
         void SepDone(string msg)
         {
             sepBusy = false;
+            if (sepTemp.Length > 0)
+            {
+                try { if (Directory.Exists(sepTemp)) Directory.Delete(sepTemp, true); } catch { }
+                sepTemp = "";
+            }
             if (!runner.Running) cancelBtn.Enabled = false;
             if (msg != null) Announce(msg);
         }
