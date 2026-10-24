@@ -23,17 +23,17 @@ namespace MediaStudio
         // codul pentru separare.exe, textul bifei, numele fișierului
         static readonly string[][] SepElemente =
         {
-            new[] { "negativ", "&Negativ (totul fără voce)", "Negativ" },
-            new[] { "voce", "&Vocea", "Voce" },
-            new[] { "tobe", "To&bele", "Tobe" },
-            new[] { "bas", "Ba&sul", "Bas" },
-            new[] { "chitara", "&Chitara", "Chitară" },
-            new[] { "pian", "&Pianul", "Pian" },
-            new[] { "restul", "&Restul instrumentelor", "Restul" },
+            new[] { "negativ", "Negativ (totul fără voce)", "Negativ" },
+            new[] { "voce", "Vocea", "Voce" },
+            new[] { "tobe", "Tobele", "Tobe" },
+            new[] { "bas", "Basul", "Bas" },
+            new[] { "chitara", "Chitara", "Chitară" },
+            new[] { "pian", "Pianul", "Pian" },
+            new[] { "restul", "Restul instrumentelor", "Restul" },
         };
 
         TextBox sepFile;
-        CheckBox[] sepChecks;
+        CheckedListBox sepList;
         CheckBox sepTogether;
         NumericUpDown sepSemi;
         ComboBox sepFormat;
@@ -58,8 +58,9 @@ namespace MediaStudio
         {
             var b = new Builder(page);
             sepFile = b.Path(null, "P&iesa: fișier de pe calculator sau link (YouTube și altele)", PathKind.OpenFile, Dialogs.MediaFilter, "");
-            b.Note("Poți scrie sau lipi direct linkul piesei: o descarc eu, fac ce ai bifat, iar piesa descărcată o șterg la final, rămân doar rezultatele. Bifează ce păstrezi. Fiecare bifă iese într-un fișier separat. Dacă nu bifezi nimic și alegi doar tonalitatea, se mută toată piesa în tonalitatea nouă, cu același tempo.");
-            sepChecks = SepElemente.Select(e => b.Check(null, e[1], e[0] == "negativ")).ToArray();
+            b.Note("Poți scrie sau lipi direct linkul piesei: o descarc eu, fac ce ai bifat, iar piesa descărcată o șterg la final, rămân doar rezultatele. În lista Ce păstrez te miști cu săgețile și bifezi cu Spațiu. Fiecare bifă iese într-un fișier separat. Dacă nu bifezi nimic și alegi doar tonalitatea, se mută toată piesa în tonalitatea nouă, cu același tempo.");
+            // o singură listă cu bife (săgeți sus și jos, Spațiu bifează); din start nu e nimic bifat
+            sepList = b.CheckList(null, "&Ce păstrez (săgețile sus și jos, Spațiu bifează)", SepElemente.Select(e => e[1]), 140);
             sepTogether = b.Check(null, "Pune-le pe toate cele bifate împreună, într-un singur &fișier");
             sepSemi = b.Number(null, "&Tonalitatea, în semitonuri (de la minus 12 la 12; 0 o lasă la fel)", -12, 12, 0);
             sepFormat = b.Combo(null, "F&ormatul", new[] { "mp3", "wav" });
@@ -89,7 +90,7 @@ namespace MediaStudio
             bool link = SepEsteLink(src);
             if (!link && (src.Length == 0 || !File.Exists(src))) { Announce("Alege întâi piesa sau scrie linkul ei."); sepFile.Focus(); return; }
             int semi = (int)sepSemi.Value;
-            if (semi == 0 && !sepChecks.Any(c => c.Checked)) { Announce("Bifează ce vrei să păstrezi sau alege o tonalitate."); return; }
+            if (semi == 0 && sepList.CheckedIndices.Count == 0) { Announce("Bifează ce vrei să păstrezi sau alege o tonalitate."); return; }
             if (link && !File.Exists(Settings.YtdlpPath)) { ShowError(Tools.MissingText(Tool.Ytdlp)); return; }
             sepBusy = true; sepStopped = false; sepLast = -1; sepFiles.Clear(); sepError = "";
             cancelBtn.Enabled = true;
@@ -177,7 +178,7 @@ namespace MediaStudio
         {
             int semi = (int)sepSemi.Value;
             string semn = semi != 0 ? " (tonalitate " + (semi > 0 ? "+" : "") + semi + ")" : "";
-            var alese = SepElemente.Where((e, i) => sepChecks[i].Checked).ToList();
+            var alese = SepElemente.Where((e, i) => sepList.GetItemChecked(i)).ToList();
             var args = new StringBuilder();
             if (alese.Count == 0)
                 args.Append(" --element original ").Append(Runner.Quote("Tonalitate " + (semi > 0 ? "+" : "") + semi));

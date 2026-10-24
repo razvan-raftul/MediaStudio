@@ -158,6 +158,17 @@ namespace MediaStudio
             return l;
         }
 
+        /// <summary>Listă cu bife, una sub alta: un singur loc cu Tab, săgețile mută, Spațiu bifează.</summary>
+        public CheckedListBox CheckList(string key, string label, IEnumerable<string> items, int height = 130)
+        {
+            AddLabel(label);
+            var l = new CheckedListBox { Height = height, Width = 420, IntegralHeight = false, CheckOnClick = true };
+            foreach (var it in items) l.Items.Add(it, false);
+            AddControl(l, label);
+            Keep(key, l);
+            return l;
+        }
+
         /// <summary>Rând de butoane.</summary>
         public Button[] Buttons(params Tuple<string, EventHandler>[] items)
         {
