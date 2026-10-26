@@ -157,7 +157,15 @@ namespace MediaStudio
                     j.A("-i", tkOther.Text.Trim());
                     if (act == 3) j.A("-map", "0:v?", "-map", "0:s?", "-map", "1:a", "-c", "copy", "-shortest");
                     else j.A("-map", "0", "-map", "1:a", "-c", "copy");
-                    if (Path.GetExtension(input).Equals(".mp4", StringComparison.OrdinalIgnoreCase)) { j.Args[j.Args.IndexOf("copy")] = "copy"; j.A("-c:a", "aac"); }
+                    // Imaginea se copiază neatinsă, dar sunetul nou se convertește în formatul potrivit clipului,
+                    // ca să meargă orice fișier audio (wav, flac, mp3...), nu doar cele care încap direct în clip.
+                    {
+                        var ext = Path.GetExtension(input).ToLowerInvariant();
+                        if (ext == ".mkv") { }                                            // mkv primește orice sunet
+                        else if (ext == ".webm") j.A("-c:a", "libopus", "-b:a", "192k");
+                        else if (ext == ".avi") j.A("-c:a", "libmp3lame", "-b:a", "256k");
+                        else j.A("-c:a", "aac", "-b:a", "256k");                          // mp4, mov, m4v și restul
+                    }
                     j.A(TkOut(input, act == 3 ? " (sunet înlocuit)" : " (pistă adăugată)", null));
                     break;
                 case 7:
