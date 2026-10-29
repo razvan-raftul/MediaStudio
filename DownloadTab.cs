@@ -10,7 +10,7 @@ namespace MediaStudio
     partial class MainForm
     {
         readonly Dictionary<string, Control> dlFields = new Dictionary<string, Control>();
-        TextBox dlUrls, dlFolder;
+        TextBox dlUrls;
         ComboBox dlType, dlQuality, dlContainer, dlAudioFmt, dlAudioQ;
         CheckBox dlSubs, dlAutoSubs, dlEmbedSubs;
         TextBox dlSubLangs;
@@ -24,7 +24,6 @@ namespace MediaStudio
             dlContainer = b.Combo("container", "&Format video", new[] { "Automat", "mp4", "mkv", "webm", "mov" });
             dlAudioFmt = b.Combo("audioFmt", "Format a&udio", new[] { "mp3", "m4a", "opus", "flac", "wav", "aac", "vorbis", "Cel mai bun, fără conversie" });
             dlAudioQ = b.Combo("audioQ", "Calitate audi&o", new[] { "Cea mai bună", "320 kbps", "256 kbps", "192 kbps", "128 kbps", "96 kbps" });
-            dlFolder = b.Path("folder", "Folder de &salvare", PathKind.Folder, null, Settings.DownloadFolder);
 
             var subs = b.Section("Subtitrări", true);
             dlSubs = subs.Check("subs", "Descarcă subtitrările");
@@ -44,6 +43,9 @@ namespace MediaStudio
             sync();
         }
 
+        /// <summary>Tot ce se descarcă merge în Documente\Media Studio\Descărcări (playlisturile într-un subfolder al lor).</summary>
+        static string DownloadDir() { return Path.Combine(Settings.DownloadFolder, "Descărcări"); }
+
         // adresele se despart prin virgulă, spațiu sau rând nou
         IEnumerable<string> Urls() { return Regex.Split(dlUrls.Text, @"[\s,;]+").Select(u => u.Trim()).Where(u => u.Length > 0); }
 
@@ -55,8 +57,7 @@ namespace MediaStudio
             j.A("--newline", "--no-colors");
             if (File.Exists(Settings.FfmpegPath)) j.A("--ffmpeg-location", Path.GetDirectoryName(Settings.FfmpegPath));
 
-            var folder = string.IsNullOrWhiteSpace(dlFolder.Text) ? Settings.DownloadFolder : dlFolder.Text.Trim();
-            j.A("-P", folder);
+            j.A("-P", DownloadDir());
             // numele original; la playlist intră într-un folder cu numele playlistului
             j.A("-o", "%(playlist_title&{}/|)s%(title)s.%(ext)s");
             // un link de videoclip care conține și playlist descarcă doar videoclipul; un link de playlist descarcă tot playlistul
@@ -104,8 +105,9 @@ namespace MediaStudio
         {
             var j = BuildDownloadJob();
             if (j == null) return;
-            var folder = string.IsNullOrWhiteSpace(dlFolder.Text) ? Settings.DownloadFolder : dlFolder.Text.Trim();
-            try { Directory.CreateDirectory(folder); } catch (Exception ex) { ShowError("Nu pot folosi folderul de salvare: " + ex.Message); return; }
+            // Documente\Media Studio\Descărcări: dacă există deja, îl folosesc; dacă nu, îl fac
+            try { Directory.CreateDirectory(DownloadDir()); } catch (Exception ex) { ShowError("Nu pot folosi folderul Descărcări: " + ex.Message); return; }
+            LastOutFolder = "Descărcări";
             Run(j);
         }
     }
