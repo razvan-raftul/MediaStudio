@@ -8,9 +8,23 @@ namespace MediaStudio
     partial class MainForm
     {
         TextBox stYt, stFf, stProbe, stFolder;
-        CheckBox stAnnounce, stDialogs, stSound, stOverwrite;
-        ComboBox stStep;
+        CheckBox stDialogs, stSound;
+        ListBox stFolders;
         bool downloading;
+
+        /// <summary>Un folder din lista din Setări: arată numele și câte fișiere are.</summary>
+        class FolderItem
+        {
+            public readonly string Name;
+            public FolderItem(string n) { Name = n; }
+            public string FullPath { get { return Path.Combine(Settings.DownloadFolder, Name); } }
+            public override string ToString()
+            {
+                int n = 0;
+                try { if (Directory.Exists(FullPath)) n = Directory.GetFiles(FullPath, "*", SearchOption.AllDirectories).Length; } catch { }
+                return Name + ", " + (n == 0 ? "gol" : n == 1 ? "un fișier" : n + " fișiere");
+            }
+        }
 
         void BuildSettingsTab(TabPage page)
         {
@@ -27,21 +41,43 @@ namespace MediaStudio
                 Builder.B("Verifică versiunile", (s, e) => ShowVersions()));
 
             var g = b.Section("General", false);
-            stFolder = g.Path(null, "Folder implicit pentru tot ce salvez", PathKind.Folder, null, Settings.DownloadFolder);
-            stOverwrite = g.Check(null, "Suprascrie fișierele existente fără să întrebe", Settings.Overwrite);
-            stAnnounce = g.Check(null, "Anunță progresul cu NVDA", Settings.AnnounceProgress);
-            stStep = g.Combo(null, "Anunță progresul la fiecare", new[] { "5%", "10%", "20%", "25%", "50%" }, 1);
-            stStep.SelectedItem = Settings.AnnounceStep + "%";
             stDialogs = g.Check(null, "Arată erorile într-o fereastră separată", Settings.ErrorDialogs);
             stSound = g.Check(null, "Sunet la terminarea operațiunilor", Settings.DoneSound);
+            stSound.CheckedChanged += (s, e) => { if (stSound.Checked) { Settings.DoneSound = true; Sounds.Done(true); } };
+
+            // folderele: restrânse, se deschid cu caseta „Arată folderele”
+            var f = b.Section("Folderele", true);
+            f.Note("Tot ce face Media Studio se salvează în folderul principal, fiecare operațiune în folderul ei. Folderele se fac singure când pornește programul.");
+            stFolder = f.Path(null, "Folderul &principal", PathKind.Folder, null, Settings.DownloadFolder);
+            stFolders = f.List(null, "Folderele din Media Studio", 190);
+            f.Buttons(
+                Builder.B("Deschide folderul selectat", (s, e) =>
+                {
+                    var it = stFolders.SelectedItem as FolderItem;
+                    if (it == null) { Announce("Alege un folder din listă."); return; }
+                    Settings.EnsureFolders();
+                    System.Diagnostics.Process.Start("explorer.exe", Runner.Quote(it.FullPath));
+                }),
+                Builder.B("Deschide folderul principal", (s, e) => { Settings.EnsureFolders(); System.Diagnostics.Process.Start("explorer.exe", Runner.Quote(Settings.DownloadFolder)); }));
+            stFolders.Enter += (s, e) => RefreshFolderList();
+            stFolders.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) { var it = stFolders.SelectedItem as FolderItem; if (it != null) { Settings.EnsureFolders(); System.Diagnostics.Process.Start("explorer.exe", Runner.Quote(it.FullPath)); } e.Handled = true; } };
+            RefreshFolderList();
+
             b.Buttons(Builder.B("&Salvează setările", (s, e) => { SaveSettingsFromUi(); Announce("Setările au fost salvate."); }),
-                      Builder.B("Deschide folderul Media Studio", (s, e) => { Directory.CreateDirectory(Settings.DownloadFolder); System.Diagnostics.Process.Start("explorer.exe", Runner.Quote(Settings.DownloadFolder)); }),
                       Builder.B("Caută actualizări acum", (s, e) => { Announce("Caut o versiune nouă…"); Updater.CheckAsync(this, true); }));
 
             EventHandler save = (s, e) => SaveSettingsFromUi();
             foreach (var c in new Control[] { stYt, stFf, stProbe, stFolder }) c.Leave += save;
-            foreach (var c in new CheckBox[] { stOverwrite, stAnnounce, stDialogs, stSound }) c.CheckedChanged += save;
-            stStep.SelectedIndexChanged += save;
+            foreach (var c in new CheckBox[] { stDialogs, stSound }) c.CheckedChanged += save;
+        }
+
+        void RefreshFolderList()
+        {
+            if (stFolders == null) return;
+            int sel = Math.Max(0, stFolders.SelectedIndex);
+            stFolders.Items.Clear();
+            foreach (var n in Settings.SubFolders) stFolders.Items.Add(new FolderItem(n));
+            if (stFolders.Items.Count > 0) stFolders.SelectedIndex = Math.Min(sel, stFolders.Items.Count - 1);
         }
 
         void SaveSettingsFromUi()
@@ -49,10 +85,12 @@ namespace MediaStudio
             Settings.YtdlpPath = stYt.Text.Trim();
             Settings.FfmpegPath = stFf.Text.Trim();
             Settings.FfprobePath = stProbe.Text.Trim();
-            if (stFolder.Text.Trim().Length > 0) Settings.DownloadFolder = stFolder.Text.Trim();
-            Settings.Overwrite = stOverwrite.Checked;
-            Settings.AnnounceProgress = stAnnounce.Checked;
-            int n; if (int.TryParse(stStep.Text.TrimEnd('%'), out n)) Settings.AnnounceStep = n;
+            if (stFolder.Text.Trim().Length > 0 && stFolder.Text.Trim() != Settings.DownloadFolder)
+            {
+                Settings.DownloadFolder = stFolder.Text.Trim();
+                Settings.EnsureFolders();
+                RefreshFolderList();
+            }
             Settings.ErrorDialogs = stDialogs.Checked;
             Settings.DoneSound = stSound.Checked;
             Settings.Save();
@@ -97,10 +135,9 @@ namespace MediaStudio
                 if (yt) { Log("Descarc yt-dlp de la " + Tools.YtdlpUrl); await Tools.DownloadYtdlp(report); lastPct = -100; }
                 if (ff) { Log("Descarc FFmpeg de la " + Tools.FfmpegUrl); await Tools.DownloadFfmpeg(report); }
                 RefreshPaths();
-                ytOptions = null; ffOptions = null;
                 Announce("Gata. Programele au fost descărcate în folderul „unelte” de lângă aplicație.");
                 Log("Programele au fost descărcate în " + Tools.ToolDir);
-                if (Settings.DoneSound) System.Media.SystemSounds.Asterisk.Play();
+                Sounds.Done(true);
             }
             catch (Exception ex)
             {

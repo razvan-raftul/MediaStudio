@@ -13,8 +13,8 @@ namespace MediaStudio
     {
         readonly Dictionary<string, Control> edFields = new Dictionary<string, Control>();
         ListBox ccFiles;
-        ComboBox ccMode;
-        TextBox spIn, spLen;
+        Action ccSync;
+        TextBox spLen;
 
         void BuildCutTab(TabPage page) { BuildCutsSection(new Builder(page, edFields)); }
         void BuildOverlayTab(TabPage page) { BuildOverlaySection(new Builder(page, edFields)); }
@@ -22,23 +22,25 @@ namespace MediaStudio
         void BuildJoinTab(TabPage page)
         {
             var c = new Builder(page, edFields).Section("Lipire", false);
-            c.Note("Adaugi fișierele în ordinea în care vrei să se audă sau să se vadă, apoi apeși Lipește. Iese un singur fișier.");
-            ccFiles = c.List(null, "Fișiere de lipit, în ordine");
-            c.Buttons(
-                Builder.B("&Adaugă fișiere…", (s, e) => { foreach (var f in Dialogs.PickFiles("Alege fișierele de lipit", Dialogs.MediaFilter, this)) ccFiles.Items.Add(f); Announce(ccFiles.Items.Count + " fișiere în listă."); }),
+            c.Note("Adaugi fișierele în ordinea în care vrei să se audă sau să se vadă, apoi apeși Lipește. Iese un singur fișier. Merge cu orice fișiere, chiar dacă au formate diferite.");
+            Button addBtn = null;
+            addBtn = c.Buttons(Builder.B("&Adaugă fișiere…", (s, e) =>
+            {
+                int n = 0;
+                foreach (var f in Dialogs.PickFiles("Alege fișierele de lipit", Dialogs.MediaFilter, this)) { ccFiles.Items.Add(new FileItem(f)); n++; }
+                ccSync();
+                if (n > 0) { ccFiles.SelectedIndex = ccFiles.Items.Count - 1; Announce("Am adăugat " + n + ". În listă sunt " + ccFiles.Items.Count + " fișiere."); }
+            }))[0];
+            // lista, mutarea, eliminarea și Lipește apar doar când există fișiere în listă
+            Panel box;
+            var g = c.Gate(out box);
+            ccFiles = g.List(null, "Fișiere de lipit, în ordine");
+            g.Buttons(
                 Builder.B("Mută în sus", (s, e) => MoveItem(ccFiles, -1)),
                 Builder.B("Mută în jos", (s, e) => MoveItem(ccFiles, 1)),
-                Builder.B("Elimină", (s, e) => RemoveSelected(ccFiles)));
-            ccMode = c.Combo("ccMode", "Mod", new[] { "Rapid (fișierele trebuie să aibă același format)", "Sigur (merge cu orice fișiere, durează mai mult)" }, 1);
-            c.Buttons(Builder.B("&Lipește", (s, e) => Run(ConcatJob())));
-        }
-
-        void BuildSplitTab(TabPage page)
-        {
-            var sp = new Builder(page, edFields).Section("Împărțire în bucăți egale", false);
-            spIn = sp.Path("spIn", "&Fișier de împărțit", PathKind.OpenFile, Dialogs.MediaFilter);
-            spLen = sp.Text("spLen", "Lungimea unei bucăți (secunde, mm:ss sau hh:mm:ss)", "10:00");
-            sp.Buttons(Builder.B("Îm&parte", (s, e) => Run(SplitJob())));
+                Builder.B("Elimină", (s, e) => { RemoveSelected(ccFiles); ccSync(); }));
+            g.Buttons(Builder.B("&Lipește", (s, e) => Run(ConcatJob())));
+            ccSync = () => HideKeepFocus(box, ccFiles.Items.Count > 0, addBtn);
         }
 
         void MoveItem(ListBox l, int dir)
@@ -67,38 +69,41 @@ namespace MediaStudio
 
         Job ConcatJob()
         {
-            var files = ccFiles.Items.Cast<string>().ToList();
+            var files = ccFiles.Items.Cast<FileItem>().Select(f => f.Path).ToList();
             if (files.Count < 2) { Announce("Adaugă cel puțin două fișiere."); return null; }
-            var outp = AutoOut(files[0], "Lipite", "lipit", Path.GetExtension(files[0]));
+            // dacă toate sunt doar sunet (mp3, wav...), se lipește doar sunetul; altfel imagine și sunet
+            bool allAudio = files.All(IsAudioOnly);
+            var ext = Path.GetExtension(files[0]);
+            if (allAudio && !IsAudioExt(files[0])) ext = ".m4a";
+            var outp = AutoOut(files[0], "Lipite", "lipit", ext);
             var j = new Job(Tool.Ffmpeg, "Unire: " + files.Count + " fișiere");
             j.A("-hide_banner", Settings.Overwrite ? "-y" : "-n", "-progress", "pipe:1", "-nostats");
-            if (ccMode.SelectedIndex == 0)
+            foreach (var f in files) j.A("-i", f);
+            var sb = new StringBuilder();
+            if (allAudio)
             {
-                var list = Path.Combine(Path.GetTempPath(), "mediastudio_concat_" + Guid.NewGuid().ToString("N") + ".txt");
-                File.WriteAllText(list, string.Join("\n", files.Select(f => "file '" + f.Replace("'", "'\\''") + "'")), new UTF8Encoding(false));
-                j.TempFile = list;
-                j.A("-f", "concat", "-safe", "0", "-i", list, "-c", "copy");
+                for (int i = 0; i < files.Count; i++) sb.Append("[" + i + ":a:0]");
+                sb.Append("concat=n=" + files.Count + ":v=0:a=1[a]");
+                j.A("-filter_complex", sb.ToString(), "-map", "[a]");
             }
             else
             {
-                foreach (var f in files) j.A("-i", f);
-                var sb = new StringBuilder();
                 for (int i = 0; i < files.Count; i++) sb.Append("[" + i + ":v:0]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1[v" + i + "];");
                 for (int i = 0; i < files.Count; i++) sb.Append("[v" + i + "][" + i + ":a:0]");
                 sb.Append("concat=n=" + files.Count + ":v=1:a=1[v][a]");
                 j.A("-filter_complex", sb.ToString(), "-map", "[v]", "-map", "[a]");
             }
-            j.DurationSeconds = 0;
+            j.DurationSeconds = files.Sum(f => Math.Max(0, Runner.ProbeDuration(f)));
             j.A(outp);
             return j;
         }
 
         Job SplitJob()
         {
-            if (!Need(spIn.Text, "fișierul de împărțit")) return null;
+            if (!Need(cuIn.Text, "fișierul de împărțit")) return null;
             double len = ParseTime(spLen.Text);
             if (len <= 0) { Announce("Scrie lungimea unei bucăți."); return null; }
-            var input = spIn.Text.Trim();
+            var input = cuIn.Text.Trim();
             var ext = Path.GetExtension(input);
             var first = AutoOut(input, "Împărțite", "partea_000", ext);
             var pattern = Path.Combine(Path.GetDirectoryName(first), Path.GetFileNameWithoutExtension(first).Replace("partea_000", "partea_%03d") + ext);

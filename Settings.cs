@@ -22,11 +22,30 @@ namespace MediaStudio
             get { var v = Get("mediaFolder"); return string.IsNullOrEmpty(v) ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Media Studio") : v; }
             set { Set("mediaFolder", value); }
         }
-        public static bool AnnounceProgress { get { return Get("announceProgress", "1") == "1"; } set { Set("announceProgress", value ? "1" : "0"); } }
-        public static int AnnounceStep { get { int n; return int.TryParse(Get("announceStep", "10"), out n) && n > 0 ? n : 10; } set { Set("announceStep", value.ToString()); } }
+        // progresul se anunță mereu, din 10 în 10; dacă rezultatul există deja, se întreabă înainte (MainForm.AskOverwrite)
+        public static bool AnnounceProgress { get { return true; } }
+        public static int AnnounceStep { get { return 10; } }
         public static bool ErrorDialogs { get { return Get("errorDialogs", "1") == "1"; } set { Set("errorDialogs", value ? "1" : "0"); } }
         public static bool DoneSound { get { return Get("doneSound", "1") == "1"; } set { Set("doneSound", value ? "1" : "0"); } }
-        public static bool Overwrite { get { return Get("overwrite", "0") == "1"; } set { Set("overwrite", value ? "1" : "0"); } }
+        public static bool Overwrite { get { return false; } }
+
+        /// <summary>Folderele pe care le face Media Studio în folderul principal, câte unul pentru fiecare fel de operațiune.</summary>
+        public static readonly string[] SubFolders =
+        {
+            "Descărcări", "Convertite", "Volum", "Separate", "Tăiate", "Fade", "Lipite", "Împărțite",
+            "Cu poze", "Piste și subtitrări", "Sunet peste videoclip", "Metadate"
+        };
+
+        /// <summary>Face de la început folderul principal și toate subfolderele (cele care există deja rămân cum sunt).</summary>
+        public static void EnsureFolders()
+        {
+            try
+            {
+                Directory.CreateDirectory(DownloadFolder);
+                foreach (var f in SubFolders) Directory.CreateDirectory(Path.Combine(DownloadFolder, f));
+            }
+            catch { }
+        }
         public static int LastTab { get { int n; return int.TryParse(Get("lastTab", "0"), out n) ? n : 0; } set { Set("lastTab", value.ToString()); } }
 
         public static string Get(string key, string def = "")

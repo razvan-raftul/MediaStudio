@@ -34,6 +34,7 @@ namespace MediaStudio
             KeyPreview = true;
 
             Tools.Detect();
+            Settings.EnsureFolders();   // toate folderele din Documente\Media Studio există de la început
             BuildBottom();
             tabs.Dock = DockStyle.Fill;
             tabs.AccessibleName = "Secțiuni";
@@ -42,16 +43,14 @@ namespace MediaStudio
             tabs.BringToFront();
 
             AddTab("Descărcare", BuildDownloadTab);
+            AddTab("Tăiere și împărțire", BuildCutTab);
+            AddTab("Lipire", BuildJoinTab);
+            AddTab("Poze și sunet peste clip", BuildOverlayTab);   // poze, sau un sunet nou peste videoclip
             AddTab("Conversie", BuildConvertTab);
             AddTab("Volum", BuildVolumeTab);
-            AddTab("Voce și instrumente", BuildSeparareTab);
-            AddTab("Tăiere", BuildCutTab);
-            AddTab("Lipire", BuildJoinTab);
-            AddTab("Împărțire", BuildSplitTab);
-            AddTab("Poze pe videoclip sau sunet", BuildOverlayTab);
+            AddTab("Separare voce și instrumente", BuildSeparareTab);
             AddTab("Piste și subtitrări", BuildTracksTab);
             AddTab("Metadate", BuildMetadataTab);
-            AddTab("Toate opțiunile", BuildOptionsTab);
             AddTab("Setări", BuildSettingsTab);
 
             runner.Line += (l, err) => { lock (pendingLog) pendingLog.Append(l).Append("\r\n"); };
@@ -162,6 +161,8 @@ namespace MediaStudio
             var list = jobs.Where(j => j != null).ToList();
             if (list.Count == 0) { Announce("Nu e nimic de făcut. Verifică fișierele sau adresele."); return false; }
             if (runner.Running) { Announce("O operațiune rulează deja. Așteaptă să se termine sau oprește-o."); return false; }
+            list = AskOverwrite(list);
+            if (list.Count == 0) { Announce("Nu am suprascris nimic, așa că nu am pornit operațiunea."); return false; }
             foreach (var t in list.Select(j => j.Tool).Distinct())
                 if (!File.Exists(Runner.ExePath(t))) { ShowError(Tools.MissingText(t)); return false; }
             queue.Clear();
@@ -173,6 +174,36 @@ namespace MediaStudio
             return true;
         }
         public bool Run(Job job) { return Run(new[] { job }); }
+
+        /// <summary>
+        /// Dacă fișierul rezultat există deja, întreabă dacă îl suprascriu. Da: FFmpeg îl înlocuiește (-y).
+        /// Nu: operațiunea aceea nu se face. Rezultatul e mereu ultimul argument al comenzii FFmpeg.
+        /// </summary>
+        List<Job> AskOverwrite(List<Job> list)
+        {
+            var keep = new List<Job>();
+            foreach (var j in list)
+            {
+                if (j.Tool == Tool.Ffmpeg && j.Args.Count > 0)
+                {
+                    var outp = j.Args[j.Args.Count - 1];
+                    var check = outp.Replace("%03d", "000");   // la Împărțire: prima bucată
+                    bool exists = false;
+                    try { exists = outp != "-" && Path.IsPathRooted(check) && File.Exists(check); } catch { }
+                    if (exists)
+                    {
+                        var folder = Path.GetFileName(Path.GetDirectoryName(check));
+                        var r = MessageBox.Show(this, "Fișierul „" + Path.GetFileName(check) + "” există deja în folderul " + folder + ".\r\n\r\nVrei să-l suprascrii?",
+                            "Media Studio", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
+                        if (r != DialogResult.Yes) { Log("Nu am suprascris: " + check); continue; }
+                        int k = j.Args.IndexOf("-n");
+                        if (k >= 0) j.Args[k] = "-y"; else if (!j.Args.Contains("-y")) j.Args.Insert(0, "-y");
+                    }
+                }
+                keep.Add(j);
+            }
+            return keep;
+        }
 
         void StartNext()
         {
@@ -235,7 +266,7 @@ namespace MediaStudio
             if (jobsDone > 0 && !string.IsNullOrEmpty(runFolder)) msg += " Rezultatul e în Media Studio, în folderul " + runFolder + ".";
             Announce(msg);
             Log(msg);
-            if (Settings.DoneSound) { if (jobsFailed == 0) SystemSounds.Asterisk.Play(); else SystemSounds.Hand.Play(); }
+            Sounds.Done(jobsFailed == 0);
         }
 
         public void ShowError(string msg)
@@ -281,7 +312,7 @@ namespace MediaStudio
         {
             MessageBox.Show(this,
                 "Scurtături:\r\n" +
-                "Control+1 Descărcare, Control+2 Conversie, Control+3 Volum, Control+4 Voce și instrumente, Control+5 Tăiere, Control+6 Lipire, Control+7 Împărțire, Control+8 Poze pe videoclip sau sunet, Control+9 Piste și subtitrări, Control+0 Setări. Metadate și Toate opțiunile nu au scurtătură.\r\n" +
+                "Control+1 Descărcare, Control+2 Tăiere și împărțire, Control+3 Lipire, Control+4 Poze și sunet peste clip, Control+5 Conversie, Control+6 Volum, Control+7 Separare voce și instrumente, Control+8 Piste și subtitrări, Control+9 Metadate, Control+0 Setări.\r\n" +
                 "Control+Tab și Control+Shift+Tab: tabul următor sau anterior.\r\n" +
                 "Control+L: jurnalul. Control+T: câmpul Stare.\r\n" +
                 "Alt cu litera subliniată: mergi direct la un câmp sau buton.\r\n" +
@@ -298,7 +329,7 @@ namespace MediaStudio
         public static string LastOutFolder;
         string runFolder;
 
-        /// <summary>Unde se salvează rezultatul: Documente\Media Studio\&lt;folder&gt;\nume_eticheta.ext. Dacă există deja, adaug _2, _3...</summary>
+        /// <summary>Unde se salvează rezultatul: Documente\Media Studio\&lt;folder&gt;\nume_eticheta.ext.</summary>
         public static string AutoOut(string input, string folderName, string tag, string ext)
         {
             var dir = Path.Combine(Settings.DownloadFolder, folderName);
@@ -306,7 +337,8 @@ namespace MediaStudio
             ext = "." + (ext ?? "").TrimStart('.');
             var name = Path.GetFileNameWithoutExtension(input) + (string.IsNullOrEmpty(tag) ? "" : "_" + tag);
             var p = Path.Combine(dir, name + ext);
-            for (int n = 2; File.Exists(p) || string.Equals(p, input, StringComparison.OrdinalIgnoreCase); n++) p = Path.Combine(dir, name + "_" + n + ext);
+            // dacă fișierul există deja, la pornire se întreabă dacă îl suprascriu (AskOverwrite); doar originalul nu se atinge niciodată
+            if (string.Equals(p, input, StringComparison.OrdinalIgnoreCase)) p = Path.Combine(dir, name + "_nou" + ext);
             LastOutFolder = folderName;
             return p;
         }

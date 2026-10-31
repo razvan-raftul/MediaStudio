@@ -17,24 +17,44 @@ namespace MediaStudio
         ListBox cuList;
         CheckBox cuJointFade;
         NumericUpDown cuFadeIn, cuFadeOut;
+        Button cuReplace;
+        Panel cuListBox;
 
         void BuildCutsSection(Builder b)
         {
-            var c = b.Section("Tăiere și fade", false);
-            c.Note("Marchezi una sau mai multe bucăți: scrii începutul și sfârșitul și apeși Adaugă bucata. Alegi dacă bucățile marcate se scot din clip sau se păstrează doar ele. Poți pune și fade la început și la sfârșit. La final apeși Aplică tăieturile. Fișierul original nu se modifică.");
+            var c = b.Section("Tăiere și împărțire", false);
+            c.Note("Alegi fișierul, apoi ce faci cu el. La tăiere marchezi una sau mai multe bucăți: scrii începutul și sfârșitul și apeși Adaugă bucata, apoi alegi dacă bucățile se scot din clip sau se păstrează doar ele; poți pune și fade la început și la sfârșit. La împărțire scrii doar cât ține o bucată, iar fișierul se taie în bucăți egale. Fișierul original nu se modifică.");
             cuIn = c.Path("cuIn", "Fișier de &editat", PathKind.OpenFile, Dialogs.MediaFilter);
-            cuStart = c.Text(null, "Începutul bucății (secunde, mm:ss sau hh:mm:ss)", "", false, "De exemplu 1:20 înseamnă minutul 1 și 20 de secunde.");
-            cuEnd = c.Text(null, "Sfârșitul bucății", "", false, "Gol înseamnă până la sfârșitul clipului.");
-            c.Buttons(
+            // restul apare doar după ce e ales fișierul
+            Panel box;
+            var top = c.Gate(out box);
+            var cuWhat = top.Combo(null, "&Ce fac cu fișierul", new[] { "Tai bucăți din el sau pun fade", "Îl împart în bucăți egale" });
+            // împărțirea: doar lungimea unei bucăți și Împarte
+            Panel splitBox;
+            var sp = top.Gate(out splitBox);
+            spLen = sp.Text("spLen", "Lungimea unei bucăți (secunde, mm:ss sau hh:mm:ss)", "10:00", false, "De exemplu 10:00 înseamnă bucăți de câte 10 minute.");
+            sp.Buttons(Builder.B("Îm&parte", (s, e) => Run(SplitJob())));
+            // tăierea și fade-ul
+            Panel cutBox;
+            var g = top.Gate(out cutBox);
+            Action whatSync = () => { bool split = cuWhat.SelectedIndex == 1; splitBox.Visible = split; cutBox.Visible = !split; };
+            cuWhat.SelectedIndexChanged += (s, e) => whatSync();
+            whatSync();
+            cuStart = g.Text(null, "Începutul bucății (secunde, mm:ss sau hh:mm:ss)", "", false, "De exemplu 1:20 înseamnă minutul 1 și 20 de secunde.");
+            cuEnd = g.Text(null, "Sfârșitul bucății", "", false, "Gol înseamnă până la sfârșitul clipului.");
+            var addBtns = g.Buttons(
                 Builder.B("Adaugă &bucata în listă", (s, e) => AddCut(false)),
                 Builder.B("Înlocuiește bucata selectată", (s, e) => AddCut(true)));
-            cuList = c.List(null, "Bucăți marcate", 110);
+            cuReplace = addBtns[1];
+            // lista de bucăți și butoanele ei apar doar când e cel puțin o bucată
+            var lg = g.Gate(out cuListBox);
+            cuList = lg.List(null, "Bucăți marcate", 110);
             cuList.SelectedIndexChanged += (s, e) =>
             {
                 int i = cuList.SelectedIndex; if (i < 0 || i >= cuts.Count) return;
                 cuStart.Text = Sec(cuts[i].Item1); cuEnd.Text = cuts[i].Item2 < 0 ? "" : Sec(cuts[i].Item2);
             };
-            c.Buttons(
+            lg.Buttons(
                 Builder.B("Elimină bucata selectată", (s, e) =>
                 {
                     int i = cuList.SelectedIndex; if (i < 0) { Announce("Nu e selectată nicio bucată."); return; }
@@ -42,11 +62,13 @@ namespace MediaStudio
                     Announce("Bucata a fost eliminată. Au rămas " + cuts.Count + ".");
                 }),
                 Builder.B("Golește lista de bucăți", (s, e) => { cuts.Clear(); RefreshCuts(-1); Announce("Lista de bucăți e goală."); }));
-            cuMode = c.Combo("cuMode", "Ce fac cu bucățile marcate", new[] { "Le scot din clip, restul se lipește", "Le păstrez doar pe ele, restul se scoate" });
-            cuJointFade = c.Check("cuJointFade", "Trecere lină la fiecare tăietură (imaginea și sunetul se sting și revin în 0,3 secunde)");
-            cuFadeIn = c.Number("cuFadeIn", "Fade in la început (secunde, 0 înseamnă fără)", 0, 60, 0, 0.5m, 1);
-            cuFadeOut = c.Number("cuFadeOut", "Fade out la sfârșit (secunde, 0 înseamnă fără)", 0, 60, 0, 0.5m, 1);
-            c.Buttons(Builder.B("Apl&ică tăieturile", (s, e) => Run(CutsJob())));
+            cuMode = g.Combo("cuMode", "Ce fac cu bucățile marcate", new[] { "Le scot din clip, restul se lipește", "Le păstrez doar pe ele, restul se scoate" });
+            cuJointFade = g.Check("cuJointFade", "Trecere lină la fiecare tăietură (imaginea și sunetul se sting și revin în 0,3 secunde)");
+            cuFadeIn = g.Number("cuFadeIn", "Fade in la început (secunde, 0 înseamnă fără)", 0, 60, 0, 0.5m, 1);
+            cuFadeOut = g.Number("cuFadeOut", "Fade out la sfârșit (secunde, 0 înseamnă fără)", 0, 60, 0, 0.5m, 1);
+            g.Buttons(Builder.B("Apl&ică tăieturile", (s, e) => Run(CutsJob())));
+            RefreshCuts(-1);
+            ShowWhenFile(cuIn, box);
         }
 
         string DescribeCut(Tuple<double, double> c, int i)
@@ -62,6 +84,8 @@ namespace MediaStudio
             cuList.Items.Clear();
             for (int i = 0; i < cuts.Count; i++) cuList.Items.Add(DescribeCut(cuts[i], i));
             if (select >= 0 && select < cuList.Items.Count) cuList.SelectedIndex = select;
+            // Înlocuiește și lista apar doar când e ceva de înlocuit sau de văzut
+            if (cuReplace != null) { bool any = cuts.Count > 0; if (!any && cuReplace.Focused) cuStart.Focus(); cuReplace.Visible = any; HideKeepFocus(cuListBox, any, cuStart); }
         }
 
         void AddCut(bool replace)

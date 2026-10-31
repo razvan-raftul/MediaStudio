@@ -60,14 +60,18 @@ namespace MediaStudio
             sepFile = b.Path(null, "P&iesa: fișier de pe calculator sau link (YouTube și altele)", PathKind.OpenFile, Dialogs.MediaFilter, "");
             b.Note("Poți scrie sau lipi direct linkul piesei: o descarc eu, fac ce ai bifat, iar piesa descărcată o șterg la final, rămân doar rezultatele. În lista Ce păstrez te miști cu săgețile și bifezi cu Spațiu. Fiecare bifă iese într-un fișier separat. Dacă nu bifezi nimic și alegi doar tonalitatea, se mută toată piesa în tonalitatea nouă, cu același tempo.");
             // o singură listă cu bife (săgeți sus și jos, Spațiu bifează); din start nu e nimic bifat
-            sepList = b.CheckList(null, "&Ce păstrez (săgețile sus și jos, Spațiu bifează)", SepElemente.Select(e => e[1]), 140);
-            sepTogether = b.Check(null, "Pune-le pe toate cele bifate împreună, într-un singur &fișier");
-            sepSemi = b.Number(null, "&Tonalitatea, în semitonuri (de la minus 12 la 12; 0 o lasă la fel)", -12, 12, 0);
-            sepFormat = b.Combo(null, "F&ormatul", new[] { "mp3", "wav" });
-            b.Buttons(
+            // restul apare doar după ce e aleasă piesa (fișier sau link)
+            Panel box;
+            var g = b.Gate(out box);
+            sepList = g.CheckList(null, "&Ce păstrez (săgețile sus și jos, Spațiu bifează)", SepElemente.Select(e => e[1]), 140);
+            sepTogether = g.Check(null, "Pune-le pe toate cele bifate împreună, într-un singur &fișier");
+            sepSemi = g.Number(null, "&Tonalitatea, în semitonuri (de la minus 12 la 12; 0 o lasă la fel)", -12, 12, 0);
+            sepFormat = g.Combo(null, "F&ormatul", new[] { "mp3", "wav" });
+            g.Buttons(
                 Builder.B("Por&nește", (s, e) => SepStart()),
                 Builder.B("Oprește separarea", (s, e) => SepStop()),
                 Builder.B("Deschide folderul cu rezultatele", (s, e) => SepOpenFolder()));
+            ShowWhenFile(sepFile, box, null, true);
         }
 
         static string SepClean(string name)
@@ -309,11 +313,12 @@ namespace MediaStudio
                 progress.Value = 1000;
                 SepDone("Gata. Am făcut " + n + (n == 1 ? " fișier" : " fișiere") + ", în folderul " + sepOutDir + ".");
                 Log(sepFiles.ToString());
-                if (Settings.DoneSound) System.Media.SystemSounds.Asterisk.Play();
+                Sounds.Done(true);
             }
             else
             {
                 SepDone(null);
+                Sounds.Done(false);
                 ShowError("Separarea nu a mers. " + (sepError.Length > 0 ? sepError : "Programul s-a oprit cu codul " + code + ". Detaliile sunt în jurnal."));
             }
         }

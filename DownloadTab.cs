@@ -19,28 +19,35 @@ namespace MediaStudio
         {
             var b = new Builder(page, dlFields);
             dlUrls = b.Text("urls", "&Adrese", "", false, "Lipește linkul unui videoclip sau al unui playlist. Dacă pui mai multe, le desparți prin virgulă. La un playlist se face singur un folder cu numele lui.");
-            dlType = b.Combo("type", "&Ce descarc", new[] { "Video cu sunet", "Doar audio", "Doar video, fără sunet" });
-            dlQuality = b.Combo("quality", "Ca&litate video", new[] { "Cea mai bună", "2160p (4K)", "1440p", "1080p", "720p", "480p", "360p", "Cea mai mică" });
-            dlContainer = b.Combo("container", "&Format video", new[] { "Automat", "mp4", "mkv", "webm", "mov" });
-            dlAudioFmt = b.Combo("audioFmt", "Format a&udio", new[] { "mp3", "m4a", "opus", "flac", "wav", "aac", "vorbis", "Cel mai bun, fără conversie" });
-            dlAudioQ = b.Combo("audioQ", "Calitate audi&o", new[] { "Cea mai bună", "320 kbps", "256 kbps", "192 kbps", "128 kbps", "96 kbps" });
+            // opțiunile apar doar după ce e scrisă o adresă
+            Panel box;
+            var g = b.Gate(out box);
+            dlType = g.Combo("type", "&Ce descarc", new[] { "Video cu sunet", "Doar audio", "Doar video, fără sunet" });
+            dlQuality = g.Combo("quality", "Ca&litate video", new[] { "Cea mai bună", "2160p (4K)", "1440p", "1080p", "720p", "480p", "360p", "Cea mai mică" });
+            dlContainer = g.Combo("container", "&Format video", new[] { "Automat", "mp4", "mkv", "webm", "mov" });
+            dlAudioFmt = g.Combo("audioFmt", "Format a&udio", new[] { "mp3", "m4a", "opus", "flac", "wav", "aac", "vorbis", "Cel mai bun, fără conversie" });
+            dlAudioQ = g.Combo("audioQ", "Calitate audi&o", new[] { "Cea mai bună", "320 kbps", "256 kbps", "192 kbps", "128 kbps", "96 kbps" });
 
-            var subs = b.Section("Subtitrări", true);
+            var subs = g.Section("Subtitrări", true);
             dlSubs = subs.Check("subs", "Descarcă subtitrările");
             dlSubLangs = subs.Text("subLangs", "Limbi subtitrări", "ro,en", false, "Coduri de limbă separate prin virgulă. all înseamnă toate.");
             dlAutoSubs = subs.Check("autoSubs", "Include și subtitrările generate automat");
             dlEmbedSubs = subs.Check("embedSubs", "Pune subtitrările în fișierul video");
 
-            b.Buttons(Builder.B("&Descarcă", (s, e) => StartDownload()));
+            g.Buttons(Builder.B("&Descarcă", (s, e) => StartDownload()));
 
+            // la „Doar audio” se văd doar opțiunile de sunet, altfel doar cele de imagine
             Action sync = () =>
             {
                 bool audio = dlType.SelectedIndex == 1;
-                dlQuality.Enabled = !audio; dlContainer.Enabled = !audio;
-                dlAudioFmt.Enabled = audio; dlAudioQ.Enabled = audio;
+                Builder.ShowRow(dlQuality, !audio); Builder.ShowRow(dlContainer, !audio);
+                Builder.ShowRow(dlAudioFmt, audio); Builder.ShowRow(dlAudioQ, audio);
             };
             dlType.SelectedIndexChanged += (s, e) => sync();
             sync();
+            Action urlSync = () => box.Visible = Urls().Any();
+            dlUrls.TextChanged += (s, e) => urlSync();
+            urlSync();
         }
 
         /// <summary>Tot ce se descarcă merge în Documente\Media Studio\Descărcări (playlisturile într-un subfolder al lor).</summary>
@@ -95,7 +102,6 @@ namespace MediaStudio
                 if (dlEmbedSubs.Checked && dlType.SelectedIndex != 1) j.A("--embed-subs"); else j.A("--convert-subs", "srt");
             }
             j.A("--embed-metadata");
-            foreach (var extra in ExtraArgs(Tool.Ytdlp)) j.Args.Add(extra);
             j.A("--");
             j.Args.AddRange(urls);
             return j;

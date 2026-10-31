@@ -9,7 +9,6 @@ namespace MediaStudio
     partial class MainForm
     {
         ListBox volFiles;
-        Label volFilesLabel;
         VolumeSlider volSlider, volLevel;
         CheckBox volEqual;
         Action volSync;
@@ -18,7 +17,8 @@ namespace MediaStudio
         void BuildVolumeTab(TabPage page)
         {
             var b = new Builder(page);
-            b.Buttons(
+            Button[] addBtns = null;
+            addBtns = b.Buttons(
                 Builder.B("&Adaugă fișiere…", (s, e) =>
                 {
                     int n = 0;
@@ -34,9 +34,11 @@ namespace MediaStudio
                     foreach (var f in Directory.GetFiles(dir).Where(f => exts.Contains(Path.GetExtension(f))).OrderBy(f => f)) n += AddVolFile(f);
                     VolAdded(n);
                 }));
-            volFiles = b.List(null, "&Fișiere");
-            volFilesLabel = b.Table.Controls.OfType<Label>().FirstOrDefault(l => l.Text == "&Fișiere");
-            var fileButtons = b.Buttons(
+            // lista, glisorul și Exportă apar doar când există fișiere
+            Panel box;
+            var g = b.Gate(out box);
+            volFiles = g.List(null, "&Fișiere");
+            g.Buttons(
                 Builder.B("Elimină fișierul selectat", (s, e) =>
                 {
                     int i = volFiles.SelectedIndex;
@@ -48,15 +50,15 @@ namespace MediaStudio
                 }),
                 Builder.B("Golește lista", (s, e) => { volFiles.Items.Clear(); volSync(); Announce("Lista e goală."); }));
 
-            volEqual = b.Check("volEqual", "Egalea&ză volumul tuturor fișierelor", false,
+            volEqual = g.Check("volEqual", "Egalea&ză volumul tuturor fișierelor", false,
                 "Fiecare fișier e ascultat întâi, apoi e adus la același nivel: cele încete urcă, cele tari coboară, ca toate să se audă la fel.");
             // glisoarele: săgeată sus/jos câte 1, Page Up/Page Down câte 5
             volSlider = new VolumeSlider(5, 400, 100, v => v + " la sută" + (v == 100 ? ", volumul original" : ""));
             volSlider.AccessibleDescription = "100 la sută înseamnă volumul original. Săgeată sus sau jos schimbă cu 1, Page Up sau Page Down cu 5.";
-            var lblVol = AddSlider(b, "&Volum", volSlider);
+            var lblVol = AddSlider(g, "&Volum", volSlider);
             volLevel = new VolumeSlider(1, 100, 50, v => "nivel " + v + (v == 50 ? ", nivel obișnuit" : ""));
             volLevel.AccessibleDescription = "Nivelul la care se aduc toate fișierele. 50 e nivelul obișnuit al muzicii de pe internet; mai sus e mai tare, mai jos mai încet.";
-            var lblLevel = AddSlider(b, "&Nivelul comun", volLevel);
+            var lblLevel = AddSlider(g, "&Nivelul comun", volLevel);
             Action volMode = () =>
             {
                 bool eq = volEqual.Checked;
@@ -66,22 +68,18 @@ namespace MediaStudio
             volEqual.CheckedChanged += (s, e) => { volMode(); Announce(volEqual.Checked ? "Egalizare pornită. Alege nivelul comun." : "Egalizare oprită. Alege volumul."); };
             volMode();
 
-            var exp = b.Buttons(Builder.B("&Exportă", (s, e) =>
+            g.Buttons(Builder.B("&Exportă", (s, e) =>
             {
                 if (volFiles.Items.Count == 0) { Announce("Adaugă întâi fișierele."); return; }
                 var files = volFiles.Items.Cast<FileItem>().Select(f => f.Path).ToList();
                 if (volEqual.Checked) { int lvl = volLevel.Value; Run(files.SelectMany(f => EqualizeJobs(f, lvl)).ToList()); }
                 else { int pct = volSlider.Value; Run(files.Select(f => VolumeJob(f, pct)).ToList()); }
             }));
-            // ordinea Tab: fișierele, glisorul, folderul, Exportă
+            // ordinea Tab: fișierele, glisorul, Exportă (glisoarele sunt adăugate de mână în tabel)
             int ti = 0;
-            foreach (Control c in b.Table.Controls.Cast<Control>().OrderBy(c => b.Table.GetRow(c)).ThenBy(c => b.Table.GetColumn(c))) c.TabIndex = ti++;
+            foreach (Control c in g.Table.Controls.Cast<Control>().OrderBy(c => g.Table.GetRow(c)).ThenBy(c => g.Table.GetColumn(c))) c.TabIndex = ti++;
 
-            volSync = () =>
-            {
-                bool any = volFiles.Items.Count > 0;
-                volFiles.Visible = any; if (volFilesLabel != null) volFilesLabel.Visible = any; fileButtons[0].Parent.Visible = any;
-            };
+            volSync = () => HideKeepFocus(box, volFiles.Items.Count > 0, addBtns[0]);
             volSync();
         }
 

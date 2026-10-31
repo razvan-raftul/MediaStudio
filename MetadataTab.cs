@@ -15,19 +15,22 @@ namespace MediaStudio
         {
             var b = new Builder(page);
             mdIn = b.Path(null, "&Fișier", PathKind.OpenFile, Dialogs.MediaFilter);
-            b.Buttons(Builder.B("&Citește metadatele existente", (s, e) => ReadMetadata()));
-            mdTitle = b.Text(null, "&Titlu");
-            mdArtist = b.Text(null, "&Artist");
-            mdAlbum = b.Text(null, "Al&bum");
-            mdAlbumArtist = b.Text(null, "Artistul albumului");
-            mdYear = b.Text(null, "A&n");
-            mdGenre = b.Text(null, "&Gen");
-            mdTrack = b.Text(null, "Număr pistă");
-            mdComment = b.Text(null, "C&omentariu", "", true);
-            mdCover = b.Path(null, "Imagine de cop&ertă", PathKind.OpenFile, Dialogs.ImageFilter);
-            mdRemoveCover = b.Check(null, "Elimină coperta existentă");
-            mdClear = b.Check(null, "Șterge toate celelalte metadate");
-            b.Buttons(Builder.B("&Salvează metadatele", (s, e) => Run(MetadataJob())));
+            // câmpurile apar după ce e ales fișierul și se completează singure cu ce are deja
+            Panel box;
+            var g = b.Gate(out box);
+            mdTitle = g.Text(null, "&Titlu");
+            mdArtist = g.Text(null, "&Artist");
+            mdAlbum = g.Text(null, "Al&bum");
+            mdAlbumArtist = g.Text(null, "Artistul albumului");
+            mdYear = g.Text(null, "A&n");
+            mdGenre = g.Text(null, "&Gen");
+            mdTrack = g.Text(null, "Număr pistă");
+            mdComment = g.Text(null, "C&omentariu", "", true);
+            mdCover = g.Path(null, "Imagine de cop&ertă", PathKind.OpenFile, Dialogs.ImageFilter);
+            mdRemoveCover = g.Check(null, "Elimină coperta existentă");
+            mdClear = g.Check(null, "Șterge toate celelalte metadate");
+            g.Buttons(Builder.B("&Salvează metadatele", (s, e) => Run(MetadataJob())));
+            ShowWhenFile(mdIn, box, ReadMetadata);
         }
 
         void ReadMetadata()

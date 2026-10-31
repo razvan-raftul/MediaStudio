@@ -11,7 +11,6 @@ namespace MediaStudio
     {
         readonly Dictionary<string, Control> cvFields = new Dictionary<string, Control>();
         ListBox cvFiles;
-        Label cvFilesLabel;
         ComboBox cvFormat;
         Action cvSync;
 
@@ -31,7 +30,8 @@ namespace MediaStudio
         void BuildConvertTab(TabPage page)
         {
             var b = new Builder(page, cvFields);
-            b.Buttons(
+            Button[] addBtns = null;
+            addBtns = b.Buttons(
                 Builder.B("&Adaugă fișiere…", (s, e) =>
                 {
                     int n = 0;
@@ -40,26 +40,23 @@ namespace MediaStudio
                     if (n > 0) { AnnounceFiles(n); cvFiles.SelectedIndex = cvFiles.Items.Count - 1; }
                 }),
                 Builder.B("Adaugă un folder…", (s, e) => AddFolder(cvFiles)));
-            cvFiles = b.List(null, "&Fișiere de convertit");
-            cvFilesLabel = b.Table.Controls.OfType<Label>().FirstOrDefault(l => l.Text == "&Fișiere de convertit");
-            var fileButtons = b.Buttons(
+            // lista, formatul și Convertește apar doar când există fișiere
+            Panel box;
+            var g = b.Gate(out box);
+            cvFiles = g.List(null, "&Fișiere de convertit");
+            g.Buttons(
                 Builder.B("Elimină fișierul selectat", (s, e) => RemoveSelected(cvFiles)),
                 Builder.B("Golește lista", (s, e) => { cvFiles.Items.Clear(); if (cvSync != null) cvSync(); Announce("Lista e goală."); }));
-            cvFormat = b.Combo("format", "Î&n", VideoFormats.Concat(AudioFormats), 0, false,
+            cvFormat = g.Combo("format", "Î&n", VideoFormats.Concat(AudioFormats), 0, false,
                 "Formatul în care se transformă fișierele. mp3, wav, flac și celelalte formate audio păstrează doar sunetul.");
             cvFormat.SelectedItem = "mp3";
-            b.Buttons(Builder.B("Con&vertește", (s, e) =>
+            g.Buttons(Builder.B("Con&vertește", (s, e) =>
             {
                 if (cvFiles.Items.Count == 0) { Announce("Adaugă întâi fișierele de convertit."); return; }
                 Run(cvFiles.Items.Cast<FileItem>().Select(f => ConvertJob(f.Path)).ToList());
             }));
 
-            // lista și butoanele ei apar doar când există fișiere
-            cvSync = () =>
-            {
-                bool any = cvFiles.Items.Count > 0;
-                cvFiles.Visible = any; if (cvFilesLabel != null) cvFilesLabel.Visible = any; fileButtons[0].Parent.Visible = any;
-            };
+            cvSync = () => HideKeepFocus(box, cvFiles.Items.Count > 0, addBtns[0]);
             cvSync();
         }
 

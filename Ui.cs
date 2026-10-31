@@ -28,7 +28,8 @@ namespace MediaStudio
                 Dock = DockStyle.Top,
                 GrowStyle = TableLayoutPanelGrowStyle.AddRows,
                 Padding = new Padding(8, 6, 8, 6),
-                TabIndex = 0
+                TabIndex = 0,
+                Tag = "builder"
             };
             Table.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             Table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -203,6 +204,32 @@ namespace MediaStudio
                 toggle.CheckedChanged += (s, e) => { g.Visible = toggle.Checked; };
             }
             return inner;
+        }
+
+        /// <summary>
+        /// Grup fără titlu, ascuns din start. În el se pun câmpurile care au rost doar după ce s-a încărcat un fișier;
+        /// box.Visible îl arată sau îl ascunde (cu Tab nu se ajunge la ce e ascuns).
+        /// </summary>
+        public Builder Gate(out Panel box)
+        {
+            box = new Panel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Anchor = AnchorStyles.Left | AnchorStyles.Right, Padding = new Padding(0), Visible = false };
+            AddWide(box);
+            box.Margin = new Padding(0);
+            var inner = new Builder(box, Fields);
+            inner.Table.Dock = DockStyle.Fill;
+            inner.Table.Padding = new Padding(0);
+            return inner;
+        }
+
+        /// <summary>Arată sau ascunde un rând întreg: câmpul împreună cu eticheta lui.</summary>
+        public static void ShowRow(Control c, bool visible)
+        {
+            Control cell = c;
+            while (cell.Parent != null && !(cell.Parent is TableLayoutPanel && (cell.Parent.Tag as string) == "builder")) cell = cell.Parent;
+            var t = cell.Parent as TableLayoutPanel;
+            if (t == null) { c.Visible = visible; return; }
+            int row = t.GetRow(cell);
+            foreach (Control x in t.Controls) if (t.GetRow(x) == row) x.Visible = visible;
         }
 
         /// <summary>Text explicativ scurt, citibil cu săgețile (casetă doar-citire).</summary>

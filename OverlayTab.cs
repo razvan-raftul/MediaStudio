@@ -28,25 +28,37 @@ namespace MediaStudio
         ComboBox ovPos, ovSize;
         ComboBox ovFade;
         ListBox ovList;
+        Button ovReplace;
+        Panel ovListBox;
 
         void BuildOverlaySection(Builder b)
         {
-            var o = b.Section("Poze peste videoclip sau peste un sunet", false);
-            o.Note("Alegi un videoclip sau un sunet, de exemplu un mp3. Apoi pentru fiecare poză: fișierul, la ce secundă apare, câte secunde stă, unde stă și cât de mare e. Apeși Adaugă poza în listă. Poți pune oricâte poze. La sfârșit apeși Pune pozele. Dacă ai ales un sunet, iese un videoclip mp4 cu mărimea primei poze, iar unde nu e nicio poză ecranul e negru.");
+            var o = b.Section("Poze și sunet peste clip", false);
+            o.Note("Alegi un videoclip sau un sunet, apoi ce pui peste el. La poze, pentru fiecare poză alegi fișierul, la ce secundă apare, câte secunde stă, unde stă și cât de mare e, apeși Adaugă poza în listă, iar la sfârșit Pune pozele; dacă ai ales un sunet, iese un videoclip mp4 cu mărimea primei poze, cu ecran negru unde nu e nicio poză. La sunet alegi sunetul nou și dacă îl pui în locul celui din clip, îl amesteci cu el sau îl adaugi ca a doua pistă; imaginea rămâne neatinsă.");
             ovVideo = o.Path("ovVideo", "&Videoclip sau sunet", PathKind.OpenFile, Dialogs.MediaFilter);
             ovVideo.TextChanged += (s, e) => { if (ovSize != null && IsAudioExt(ovVideo.Text)) ovSize.SelectedIndex = 1; };
-            ovImage = o.Path(null, "&Poză", PathKind.OpenFile, Dialogs.ImageFilter);
-            ovStart = o.Text(null, "Apare la (secunde sau mm:ss)", "0", false, "De exemplu 5 înseamnă secunda 5, iar 1:30 înseamnă minutul 1 și 30 de secunde.");
-            ovDur = o.Text(null, "Stă pe ecran (secunde)", "5", false, "Câte secunde rămâne poza pe ecran.");
-            ovPos = o.Combo(null, "Unde stă poza", OvPositions);
-            ovSize = o.Combo(null, "Cât de mare e poza", OvSizes, 2);
-            ovFade = o.Combo(null, "Cum apare și dispare poza (trecerea ține jumătate de secundă)", OvFades, 0);
-            o.Buttons(
+            // restul apare doar după ce e ales videoclipul sau sunetul
+            Panel box;
+            var top = o.Gate(out box);
+            var ovWhat = top.Combo(null, "&Ce pun peste el", new[] { "Poze", "Un sunet nou" });
+            // pozele
+            Panel picBox;
+            var g = top.Gate(out picBox);
+            ovImage = g.Path(null, "&Poză", PathKind.OpenFile, Dialogs.ImageFilter);
+            ovStart = g.Text(null, "Apare la (secunde sau mm:ss)", "0", false, "De exemplu 5 înseamnă secunda 5, iar 1:30 înseamnă minutul 1 și 30 de secunde.");
+            ovDur = g.Text(null, "Stă pe ecran (secunde)", "5", false, "Câte secunde rămâne poza pe ecran.");
+            ovPos = g.Combo(null, "Unde stă poza", OvPositions);
+            ovSize = g.Combo(null, "Cât de mare e poza", OvSizes, 2);
+            ovFade = g.Combo(null, "Cum apare și dispare poza (trecerea ține jumătate de secundă)", OvFades, 0);
+            var addBtns = g.Buttons(
                 Builder.B("A&daugă poza în listă", (s, e) => AddOverlay(false)),
                 Builder.B("Înlocuiește poza selectată cu valorile de mai sus", (s, e) => AddOverlay(true)));
-            ovList = o.List(null, "Pozele puse", 120);
+            ovReplace = addBtns[1];
+            // lista de poze, eliminarea și Pune pozele apar doar când e cel puțin o poză în listă
+            var lg = g.Gate(out ovListBox);
+            ovList = lg.List(null, "Pozele puse", 120);
             ovList.SelectedIndexChanged += (s, e) => LoadOverlay();
-            o.Buttons(
+            lg.Buttons(
                 Builder.B("Elimină poza selectată", (s, e) =>
                 {
                     int i = ovList.SelectedIndex; if (i < 0) { Announce("Nu e selectată nicio poză."); return; }
@@ -54,7 +66,16 @@ namespace MediaStudio
                     Announce("Poza a fost eliminată. Au rămas " + overlays.Count + ".");
                 }),
                 Builder.B("Golește lista de poze", (s, e) => { overlays.Clear(); RefreshOverlays(-1); Announce("Lista de poze e goală."); }));
-            o.Buttons(Builder.B("Pune po&zele", (s, e) => Run(OverlayJob())));
+            lg.Buttons(Builder.B("Pune po&zele", (s, e) => Run(OverlayJob())));
+            // sunetul nou (tot aici, ca să nu fie o filă în plus)
+            Panel sndBox;
+            var sg = top.Gate(out sndBox);
+            BuildSoundSection(sg);
+            Action whatSync = () => { bool snd = ovWhat.SelectedIndex == 1; sndBox.Visible = snd; picBox.Visible = !snd; };
+            ovWhat.SelectedIndexChanged += (s, e) => whatSync();
+            whatSync();
+            RefreshOverlays(-1);
+            ShowWhenFile(ovVideo, box);
         }
 
         static string Clock(double s)
@@ -77,6 +98,7 @@ namespace MediaStudio
             ovList.Items.Clear();
             for (int i = 0; i < overlays.Count; i++) ovList.Items.Add(Describe(overlays[i], i));
             if (select >= 0 && select < ovList.Items.Count) ovList.SelectedIndex = select;
+            if (ovReplace != null) { bool any = overlays.Count > 0; if (!any && ovReplace.Focused) ovImage.Focus(); ovReplace.Visible = any; HideKeepFocus(ovListBox, any, ovImage); }
         }
 
         void AddOverlay(bool replace)
