@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -44,14 +44,18 @@ namespace MediaStudio
 
             AddTab("Descărcare", BuildDownloadTab);
             AddTab("Tăiere și împărțire", BuildCutTab);
+            AddTab("Fade", BuildFadeTab);   // fade in la început și fade out la sfârșit, pentru unul sau mai multe fișiere
             AddTab("Lipire", BuildJoinTab);
             AddTab("Poze și sunet peste clip", BuildOverlayTab);   // poze, sau un sunet nou peste videoclip
             AddTab("Conversie", BuildConvertTab);
             AddTab("Volum", BuildVolumeTab);
             AddTab("Separare voce și instrumente", BuildSeparareTab);
+            AddTab("Transpoziție", BuildTranspozitieTab);   // urcă sau coboară piesa cu semitonuri
             AddTab("Piste și subtitrări", BuildTracksTab);
             AddTab("Metadate", BuildMetadataTab);
             AddTab("Setări", BuildSettingsTab);
+            Memory.RestoreAndWatch();   // pune la loc ce s-a ales ultima dată în fiecare tab
+            statusBox.Text = "Pregătit.";
 
             runner.Line += (l, err) => { lock (pendingLog) pendingLog.Append(l).Append("\r\n"); };
             runner.Progress += p => BeginInvoke((Action)(() => OnProgress(p)));
@@ -66,6 +70,7 @@ namespace MediaStudio
                 if (!updating && (runner.Running || sepBusy) && MessageBox.Show(this, "O operațiune încă rulează. O opresc și închid aplicația?", "Media Studio", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) { e.Cancel = true; return; }
                 runner.Cancel();
                 SepStop(true);
+                PlClose();
                 Settings.LastTab = tabs.SelectedIndex;
                 Settings.Save();
             };
@@ -292,6 +297,7 @@ namespace MediaStudio
         // ------------------------------------------------------------------ scurtături
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
+            if (PlKey(keyData)) return true;   // redarea din tabul Tăiere și împărțire (F5–F11)
             if ((keyData & Keys.Control) == Keys.Control && (keyData & Keys.Alt) == 0)
             {
                 var k = keyData & Keys.KeyCode;
@@ -312,9 +318,10 @@ namespace MediaStudio
         {
             MessageBox.Show(this,
                 "Scurtături:\r\n" +
-                "Control+1 Descărcare, Control+2 Tăiere și împărțire, Control+3 Lipire, Control+4 Poze și sunet peste clip, Control+5 Conversie, Control+6 Volum, Control+7 Separare voce și instrumente, Control+8 Piste și subtitrări, Control+9 Metadate, Control+0 Setări.\r\n" +
+                "Control+1 Descărcare, Control+2 Tăiere și împărțire, Control+3 Fade, Control+4 Lipire, Control+5 Poze și sunet peste clip, Control+6 Conversie, Control+7 Volum, Control+8 Separare voce și instrumente, Control+9 Transpoziție, Control+0 Setări. Piste și subtitrări și Metadate nu au scurtătură (sunt înainte de Setări).\r\n" +
                 "Control+Tab și Control+Shift+Tab: tabul următor sau anterior.\r\n" +
                 "Control+L: jurnalul. Control+T: câmpul Stare.\r\n" +
+                "În tabul Tăiere și împărțire: F5 redă sau pune pauză, F6 spune timpul, F7 înapoi și F8 înainte câte 5 secunde (cu Shift câte o secundă, cu Control câte 30), F9 pune timpul la începutul bucății, F11 la sfârșitul ei.\r\n" +
                 "Alt cu litera subliniată: mergi direct la un câmp sau buton.\r\n" +
                 "F1: acest ajutor.\r\n\r\n" +
                 "Starea și progresul sunt anunțate automat. Erorile apar într-o fereastră din care textul se poate copia cu Control+C.",

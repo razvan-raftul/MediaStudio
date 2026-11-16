@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
@@ -15,6 +15,8 @@ namespace MediaStudio
     {
         public readonly TableLayoutPanel Table;
         public readonly Dictionary<string, Control> Fields;
+        /// <summary>Numele tabului; alegerile din el se țin minte sub acest nume (null = nu se țin minte).</summary>
+        public string Scope;
         int tab;
 
         public Builder(Control parent, Dictionary<string, Control> fields = null)
@@ -35,6 +37,7 @@ namespace MediaStudio
             Table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             parent.Controls.Add(Table);
             Table.BringToFront();
+            if (parent is TabPage) Scope = parent.Text;
         }
 
         public static string Plain(string label)
@@ -87,6 +90,7 @@ namespace MediaStudio
             if (description != null) c.AccessibleDescription = description;
             AddControl(c, label);
             Keep(key, c);
+            if (!editable) Memory.Register(Scope, label, c);
             return c;
         }
 
@@ -101,16 +105,20 @@ namespace MediaStudio
             Table.Controls.Add(n, 1, Table.RowCount);
             Table.RowCount++;
             Keep(key, n);
+            Memory.Register(Scope, label, n);
             return n;
         }
 
-        public CheckBox Check(string key, string text, bool value = false, string description = null)
+        public CheckBox Check(string key, string text, bool value = false, string description = null) { return Check(key, text, value, description, true); }
+
+        CheckBox Check(string key, string text, bool value, string description, bool remember)
         {
             var c = new CheckBox { Text = text, Checked = value, AutoSize = true };
             c.AccessibleName = Plain(text);
             if (description != null) c.AccessibleDescription = description;
             AddWide(c);
             Keep(key, c);
+            if (remember) Memory.Register(Scope, text, c);
             return c;
         }
 
@@ -123,6 +131,7 @@ namespace MediaStudio
             t.ValueChanged += (s, e) => upd();
             upd();
             Keep(key, t);
+            Memory.Register(Scope, label, t);
             return t;
         }
 
@@ -167,6 +176,7 @@ namespace MediaStudio
             foreach (var it in items) l.Items.Add(it, false);
             AddControl(l, label);
             Keep(key, l);
+            Memory.Register(Scope, label, l);
             return l;
         }
 
@@ -192,11 +202,11 @@ namespace MediaStudio
         public Builder Section(string title, bool collapsible, bool startOpen = false)
         {
             CheckBox toggle = null;
-            if (collapsible) toggle = Check(null, "Arată " + title.ToLowerInvariant(), startOpen);
+            if (collapsible) toggle = Check(null, "Arată " + title.ToLowerInvariant(), startOpen, null, false);
             var g = new GroupBox { Text = title, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Anchor = AnchorStyles.Left | AnchorStyles.Right, Padding = new Padding(4, 2, 4, 4) };
             g.AccessibleName = title;
             AddWide(g);
-            var inner = new Builder(g, Fields);
+            var inner = new Builder(g, Fields) { Scope = Scope };
             inner.Table.Dock = DockStyle.Fill;
             if (toggle != null)
             {
@@ -215,7 +225,7 @@ namespace MediaStudio
             box = new Panel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Anchor = AnchorStyles.Left | AnchorStyles.Right, Padding = new Padding(0), Visible = false };
             AddWide(box);
             box.Margin = new Padding(0);
-            var inner = new Builder(box, Fields);
+            var inner = new Builder(box, Fields) { Scope = Scope };
             inner.Table.Dock = DockStyle.Fill;
             inner.Table.Padding = new Padding(0);
             return inner;
@@ -268,6 +278,60 @@ namespace MediaStudio
                     System.Windows.Forms.Automation.AutomationNotificationProcessing.MostRecent, text);
             }
             catch { }
+        }
+    }
+
+    /// <summary>
+    /// Ține minte, pentru fiecare tab, ce ai ales ultima dată în liste, bife, glisoare și câmpuri cu numere,
+    /// și le pune la loc la următoarea pornire. Se salvează în settings.ini imediat după fiecare schimbare.
+    /// </summary>
+    static class Memory
+    {
+        static readonly List<Tuple<string, Control>> items = new List<Tuple<string, Control>>();
+
+        public static void Register(string scope, string label, Control c)
+        {
+            if (string.IsNullOrEmpty(scope) || scope == "Setări") return;   // Setările au deja locul lor
+            var name = Builder.Plain(label);
+            // ce șterge ceva (metadate, coperta) nu rămâne bifat de la o pornire la alta
+            if (name.StartsWith("Șterge") || name.StartsWith("Elimină")) return;
+            items.Add(Tuple.Create("ultim|" + scope + "|" + name, c));
+        }
+
+        /// <summary>Se cheamă o dată, după ce sunt făcute toate taburile.</summary>
+        public static void RestoreAndWatch()
+        {
+            foreach (var it in items)
+            {
+                var key = it.Item1; var c = it.Item2;
+                var v = Settings.Get(key, null);
+                if (v != null) try { Set(c, v); } catch { }
+                EventHandler save = (s, e) => { Settings.Set(key, Get(c)); Settings.Save(); };
+                if (c is CheckedListBox) ((CheckedListBox)c).ItemCheck += (s, e) => ((Control)s).BeginInvoke(save, s, e);
+                else if (c is ComboBox) ((ComboBox)c).SelectedIndexChanged += save;
+                else if (c is CheckBox) ((CheckBox)c).CheckedChanged += save;
+                else if (c is NumericUpDown) ((NumericUpDown)c).ValueChanged += save;
+                else if (c is TrackBar) ((TrackBar)c).ValueChanged += save;
+            }
+        }
+
+        static string Get(Control c)
+        {
+            var cl = c as CheckedListBox;
+            if (cl != null) return string.Join("\n", cl.CheckedItems.Cast<object>().Select(o => o.ToString()));
+            return FieldIO.Value(c);
+        }
+
+        static void Set(Control c, string v)
+        {
+            var cl = c as CheckedListBox;
+            if (cl != null)
+            {
+                var on = new HashSet<string>(v.Split('\n'));
+                for (int i = 0; i < cl.Items.Count; i++) cl.SetItemChecked(i, on.Contains(cl.Items[i].ToString()));
+                return;
+            }
+            FieldIO.SetValue(c, v);
         }
     }
 

@@ -8,7 +8,7 @@ namespace MediaStudio
     {
         /// <summary>
         /// Arată grupul doar când în câmp e un fișier care există (sau un link, dacă allowLink).
-        /// Când fișierul apare, rulează onLoaded (de exemplu citește pistele), fără niciun anunț.
+        /// Când fișierul apare, spune ce s-a încărcat și rulează onLoaded (de exemplu citește pistele).
         /// </summary>
         void ShowWhenFile(TextBox path, Control box, Action onLoaded = null, bool allowLink = false)
         {
@@ -21,6 +21,7 @@ namespace MediaStudio
                 box.Visible = ok;
                 if (ok && !string.Equals(t, loaded, StringComparison.OrdinalIgnoreCase))
                 {
+                    if (!link) Announce("Am încărcat " + Path.GetFileName(t) + ".", false);
                     if (onLoaded != null) { try { onLoaded(); } catch (Exception ex) { Log(ex.Message); } }
                 }
                 loaded = ok ? t : null;

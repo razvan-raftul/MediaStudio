@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -21,25 +21,25 @@ namespace MediaStudio
 
         void BuildJoinTab(TabPage page)
         {
-            var c = new Builder(page, edFields).Section("Lipire", false);
-            c.Note("Adaugi fișierele în ordinea în care vrei să se audă sau să se vadă, apoi apeși Lipește. Iese un singur fișier. Merge cu orice fișiere, chiar dacă au formate diferite.");
+            var c = new Builder(page, edFields).Section("Unire", false);
+            c.Note("Adaugi fișierele în ordinea în care vrei să se audă sau să se vadă, apoi apeși Unește. Iese un singur fișier. Merge cu orice fișiere, chiar dacă au formate diferite.");
             Button addBtn = null;
             addBtn = c.Buttons(Builder.B("&Adaugă fișiere…", (s, e) =>
             {
                 int n = 0;
-                foreach (var f in Dialogs.PickFiles("Alege fișierele de lipit", Dialogs.MediaFilter, this)) { ccFiles.Items.Add(new FileItem(f)); n++; }
+                foreach (var f in Dialogs.PickFiles("Alege fișierele de unit", Dialogs.MediaFilter, this)) { ccFiles.Items.Add(new FileItem(f)); n++; }
                 ccSync();
                 if (n > 0) { ccFiles.SelectedIndex = ccFiles.Items.Count - 1; Announce("Am adăugat " + n + ". În listă sunt " + ccFiles.Items.Count + " fișiere."); }
             }))[0];
-            // lista, mutarea, eliminarea și Lipește apar doar când există fișiere în listă
+            // lista, mutarea, eliminarea și Unește apar doar când există fișiere în listă
             Panel box;
             var g = c.Gate(out box);
-            ccFiles = g.List(null, "Fișiere de lipit, în ordine");
+            ccFiles = g.List(null, "Fișiere de unit, în ordine");
             g.Buttons(
                 Builder.B("Mută în sus", (s, e) => MoveItem(ccFiles, -1)),
                 Builder.B("Mută în jos", (s, e) => MoveItem(ccFiles, 1)),
                 Builder.B("Elimină", (s, e) => { RemoveSelected(ccFiles); ccSync(); }));
-            g.Buttons(Builder.B("&Lipește", (s, e) => Run(ConcatJob())));
+            g.Buttons(Builder.B("U&nește", (s, e) => Run(ConcatJob())));
             ccSync = () => HideKeepFocus(box, ccFiles.Items.Count > 0, addBtn);
         }
 
@@ -51,12 +51,41 @@ namespace MediaStudio
             Announce("Poziția " + (k + 1) + " din " + l.Items.Count);
         }
 
+        /// <summary>
+        /// Timpul scris în câmpuri: 80, 1:20, 01:20.5, 00:01:20,040 (ore:minute:secunde) sau în cuvinte:
+        /// „3 min 30 sec 40 ms”, „1 oră 2 minute”, „3m30s”, „90 secunde”. -1 dacă nu se înțelege.
+        /// </summary>
         static double ParseTime(string s)
         {
-            s = (s ?? "").Trim().Replace(',', '.');
+            s = (s ?? "").Trim().ToLowerInvariant();
             if (s.Length == 0) return -1;
+            if (System.Text.RegularExpressions.Regex.IsMatch(s, @"\p{L}")) return ParseTimeWords(s);
+            s = s.Replace(',', '.');
             double total = 0;
             foreach (var p in s.Split(':')) { double v; if (!double.TryParse(p, NumberStyles.Float, CultureInfo.InvariantCulture, out v)) return -1; total = total * 60 + v; }
+            return total;
+        }
+        static double ParseTimeWords(string s)
+        {
+            var ms = System.Text.RegularExpressions.Regex.Matches(s, @"(\d+(?:[.,]\d+)?)\s*([\p{L}]+)");
+            if (ms.Count == 0) return -1;
+            double total = 0;
+            foreach (System.Text.RegularExpressions.Match m in ms)
+            {
+                double v;
+                if (!double.TryParse(m.Groups[1].Value.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out v)) return -1;
+                string u = m.Groups[2].Value;
+                double mult;
+                if (u == "ms" || u.StartsWith("mili")) mult = 0.001;
+                else if (u == "h" || u == "o" || u.StartsWith("or") || u.StartsWith("ore")) mult = 3600;
+                else if (u == "m" || u.StartsWith("min")) mult = 60;
+                else if (u == "s" || u.StartsWith("sec")) mult = 1;
+                else return -1;
+                total += v * mult;
+            }
+            // nu trebuie să rămână cifre fără unitate (de exemplu „3 min 30”)
+            var rest = System.Text.RegularExpressions.Regex.Replace(s, @"(\d+(?:[.,]\d+)?)\s*([\p{L}]+)", " ");
+            if (System.Text.RegularExpressions.Regex.IsMatch(rest, @"\d")) return -1;
             return total;
         }
         static string Sec(double v) { return v.ToString("0.###", CultureInfo.InvariantCulture); }

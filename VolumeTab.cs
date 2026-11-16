@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -92,6 +92,7 @@ namespace MediaStudio
             b.Table.Controls.Add(lbl, 0, row);
             b.Table.Controls.Add(sl, 1, row);
             b.Table.RowCount++;
+            Memory.Register(b.Scope, label, sl);
             return lbl;
         }
 
@@ -157,11 +158,11 @@ namespace MediaStudio
         }
 
         /// <summary>Același format ca originalul; imaginea video și subtitrările se copiază neschimbate, doar sunetul trece prin filtru.</summary>
-        void FillVolumeArgs(Job j, string input, string filter, string suffix)
+        void FillVolumeArgs(Job j, string input, string filter, string suffix, string folder = "Volum")
         {
             var ext = Path.GetExtension(input).TrimStart('.').ToLowerInvariant();
             if (ext.Length == 0) ext = "mp3";
-            var outp = AutoOut(input, "Volum", Tag(suffix), ext);
+            var outp = AutoOut(input, folder, Tag(suffix), ext);
             bool audioOnly = AudioFormats.Contains(ext);
             // sunetul trece prin filtru; imaginea (și coperta la mp3) și subtitrările se copiază neschimbate
             j.A("-hide_banner", Settings.Overwrite ? "-y" : "-n", "-progress", "pipe:1", "-nostats", "-i", input, "-map", "0:v?", "-map", "0:a");

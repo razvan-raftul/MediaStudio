@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
@@ -22,7 +22,7 @@ namespace MediaStudio
             get { var v = Get("mediaFolder"); return string.IsNullOrEmpty(v) ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Media Studio") : v; }
             set { Set("mediaFolder", value); }
         }
-        // progresul se anunță mereu, din 10 în 10; dacă rezultatul există deja, se întreabă înainte (MainForm.AskOverwrite)
+        // progresul se anunță mereu, din 10 în 10; fișierele existente nu se suprascriu niciodată (rezultatul primește _2, _3...)
         public static bool AnnounceProgress { get { return true; } }
         public static int AnnounceStep { get { return 10; } }
         public static bool ErrorDialogs { get { return Get("errorDialogs", "1") == "1"; } set { Set("errorDialogs", value ? "1" : "0"); } }
@@ -32,7 +32,7 @@ namespace MediaStudio
         /// <summary>Folderele pe care le face Media Studio în folderul principal, câte unul pentru fiecare fel de operațiune.</summary>
         public static readonly string[] SubFolders =
         {
-            "Descărcări", "Convertite", "Volum", "Separate", "Tăiate", "Fade", "Lipite", "Împărțite",
+            "Descărcări", "Convertite", "Volum", "Separate", "Transpuse", "Tăiate", "Fade", "Lipite", "Împărțite",
             "Cu poze", "Piste și subtitrări", "Sunet peste videoclip", "Metadate"
         };
 

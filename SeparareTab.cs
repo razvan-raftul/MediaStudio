@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
@@ -12,7 +12,7 @@ namespace MediaStudio
 {
     /// <summary>
     /// Tabul „Voce și instrumente”: piesa poate fi un fișier sau un link (se descarcă întâi cu yt-dlp). Desparte o piesă în voce, tobe, bas, chitară, pian și restul, face negativul
-    /// (totul fără voce) și schimbă tonalitatea. Lucrul îl face separare.exe (Demucs și ffmpeg cu rubberband),
+    /// (totul fără voce) (tonalitatea se schimbă în tabul Transpoziție). Lucrul îl face separare.exe (Demucs și ffmpeg cu rubberband),
     /// care se descarcă singur prima dată, în subfolderul unelte\separare.
     /// </summary>
     partial class MainForm
@@ -35,7 +35,6 @@ namespace MediaStudio
         TextBox sepFile;
         CheckedListBox sepList;
         CheckBox sepTogether;
-        NumericUpDown sepSemi;
         ComboBox sepFormat;
         Process sepProc;
         bool sepBusy, sepStopped;
@@ -58,14 +57,13 @@ namespace MediaStudio
         {
             var b = new Builder(page);
             sepFile = b.Path(null, "P&iesa: fișier de pe calculator sau link (YouTube și altele)", PathKind.OpenFile, Dialogs.MediaFilter, "");
-            b.Note("Poți scrie sau lipi direct linkul piesei: o descarc eu, fac ce ai bifat, iar piesa descărcată o șterg la final, rămân doar rezultatele. În lista Ce păstrez te miști cu săgețile și bifezi cu Spațiu. Fiecare bifă iese într-un fișier separat. Dacă nu bifezi nimic și alegi doar tonalitatea, se mută toată piesa în tonalitatea nouă, cu același tempo.");
+            b.Note("Poți scrie sau lipi direct linkul piesei: o descarc eu, fac ce ai bifat, iar piesa descărcată o șterg la final, rămân doar rezultatele. În lista Ce păstrez te miști cu săgețile și bifezi cu Spațiu. Fiecare bifă iese într-un fișier separat. Pentru schimbarea tonalității folosește tabul Transpoziție.");
             // o singură listă cu bife (săgeți sus și jos, Spațiu bifează); din start nu e nimic bifat
             // restul apare doar după ce e aleasă piesa (fișier sau link)
             Panel box;
             var g = b.Gate(out box);
             sepList = g.CheckList(null, "&Ce păstrez (săgețile sus și jos, Spațiu bifează)", SepElemente.Select(e => e[1]), 140);
             sepTogether = g.Check(null, "Pune-le pe toate cele bifate împreună, într-un singur &fișier");
-            sepSemi = g.Number(null, "&Tonalitatea, în semitonuri (de la minus 12 la 12; 0 o lasă la fel)", -12, 12, 0);
             sepFormat = g.Combo(null, "F&ormatul", new[] { "mp3", "wav" });
             g.Buttons(
                 Builder.B("Por&nește", (s, e) => SepStart()),
@@ -93,8 +91,7 @@ namespace MediaStudio
             var src = sepFile.Text.Trim().Trim('"');
             bool link = SepEsteLink(src);
             if (!link && (src.Length == 0 || !File.Exists(src))) { Announce("Alege întâi piesa sau scrie linkul ei."); sepFile.Focus(); return; }
-            int semi = (int)sepSemi.Value;
-            if (semi == 0 && sepList.CheckedIndices.Count == 0) { Announce("Bifează ce vrei să păstrezi sau alege o tonalitate."); return; }
+            if (sepList.CheckedIndices.Count == 0) { Announce("Bifează întâi ce vrei să păstrezi."); sepList.Focus(); return; }
             if (link && !File.Exists(Settings.YtdlpPath)) { ShowError(Tools.MissingText(Tool.Ytdlp)); return; }
             sepBusy = true; sepStopped = false; sepLast = -1; sepFiles.Clear(); sepError = "";
             cancelBtn.Enabled = true;
@@ -180,14 +177,12 @@ namespace MediaStudio
         /// <summary>Pregătește comanda pentru separare.exe (piesa e acum un fișier) și o pornește; prima dată descarcă programul.</summary>
         void SepPrepare(string input)
         {
-            int semi = (int)sepSemi.Value;
-            string semn = semi != 0 ? " (tonalitate " + (semi > 0 ? "+" : "") + semi + ")" : "";
+            // tonalitatea se schimbă acum în tabul Transpoziție; aici rămâne mereu 0
+            const int semi = 0;
+            const string semn = "";
             var alese = SepElemente.Where((e, i) => sepList.GetItemChecked(i)).ToList();
             var args = new StringBuilder();
-            if (alese.Count == 0)
-                args.Append(" --element original ").Append(Runner.Quote("Tonalitate " + (semi > 0 ? "+" : "") + semi));
-            else
-                foreach (var e in alese) args.Append(" --element ").Append(e[0]).Append(' ').Append(Runner.Quote(e[2] + semn));
+            foreach (var e in alese) args.Append(" --element ").Append(e[0]).Append(' ').Append(Runner.Quote(e[2] + semn));
             if (sepTogether.Checked && alese.Count > 1)
                 args.Append(" --impreuna ").Append(Runner.Quote(string.Join(" + ", alese.Select(e => e[2])) + semn));
             var titlu = Path.GetFileNameWithoutExtension(input);
@@ -255,7 +250,7 @@ namespace MediaStudio
         void SepRun(string args, bool separa)
         {
             if (sepStopped) { SepDone("Oprit."); return; }
-            Announce(separa ? "Despart piesa. Poate dura câteva minute." : "Schimb tonalitatea.");
+            Announce("Despart piesa. Poate dura câteva minute.");
             Log("");
             Log("=== Voce și instrumente ===");
             Log("> " + Runner.Quote(SepExe) + " " + args);
