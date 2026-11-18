@@ -1,7 +1,9 @@
 """Separarea pieselor audio și schimbarea tonalității, pentru Media Studio (tabul Voce și instrumente).
 Din el se face separare.exe în workflow-ul „separare” (cu Demucs, BS-RoFormer, modelele lor și ffmpeg alături).
 Vocea și negativul se scot cu BS-RoFormer (modelul Viperx 1297, același fel de model ca pe X-Minus), prin pachetul audio-separator;
-tobele, basul, chitara, pianul și restul se scot cu Demucs. Dacă modelul RoFormer lipsește, totul merge cu Demucs, ca înainte.
+tobele, basul, chitara, pianul și restul se scot cu Demucs. Totul merge pe placa video NVIDIA (CUDA) dacă există.
+Pe procesor RoFormer e prea lent (zeci de minute pe piesă), așa că fără placă video, sau dacă modelul lipsește,
+totul merge cu Demucs, ca înainte (--forteaza-roformer îl folosește oricum).
 
 Folosire:
   separare.exe --intrare PIESA --iesire FOLDER [--element COD ETICHETA]... [--impreuna ETICHETA]
@@ -99,6 +101,18 @@ def doar_tonalitate(intrare, cale, semitonuri, fmt):
 
 def are_roformer():
     return os.path.isfile(os.path.join(DIR_ROFORMER, ROFORMER))
+
+
+def are_placa_video():
+    try:
+        import torch
+        return torch.cuda.is_available()
+    except Exception:
+        return False
+
+
+def dispozitiv():
+    return 'cuda' if are_placa_video() else 'cpu'
 
 
 def separa_roformer(date, de_la, pana_la):
@@ -204,9 +218,9 @@ def separa(date, model_nume, de_la=5, pana_la=90):
     ref = wav.mean(0)
     medie, abatere = ref.mean(), ref.std() + 1e-8
     with torch.no_grad():
-        iesire = da.apply_model(model, ((wav - medie) / abatere)[None], device='cpu', shifts=1, split=True,
+        iesire = da.apply_model(model, ((wav - medie) / abatere)[None], device=dispozitiv(), shifts=1, split=True,
                                 overlap=0.25, progress=True, num_workers=0)[0]
-    iesire = iesire * abatere + medie
+    iesire = iesire.cpu() * abatere + medie
     return {nume: iesire[i].numpy().astype(np.float32) for i, nume in enumerate(model.sources)}
 
 
@@ -220,12 +234,21 @@ def main():
     ap.add_argument('--format', choices=['mp3', 'wav'], default='mp3')
     ap.add_argument('--model')
     ap.add_argument('--fara-roformer', action='store_true', help='vocea și negativul tot cu Demucs')
+    ap.add_argument('--forteaza-roformer', action='store_true', help='RoFormer și fără placă video (foarte lent)')
     ap.add_argument('--verifica', action='store_true', help='spune ce poate (rubberband, modele) și iese')
     a = ap.parse_args()
     if a.verifica:
         spune('RUBBERBAND', are_rubberband())
         spune('MODELE', sorted(os.listdir(os.path.join(BAZA, 'modele'))) if os.path.isdir(os.path.join(BAZA, 'modele')) else [])
         spune('ROFORMER', are_roformer())
+        spune('PLACA_VIDEO', are_placa_video())
+        try:
+            import torch
+            spune('TORCH', torch.__version__, torch.version.cuda)
+            if torch.cuda.is_available():
+                spune('PLACA', torch.cuda.get_device_name(0))
+        except Exception as ex:
+            spune('TORCH eroare', ex)
         return
     if not a.intrare or not a.iesire or not a.element:
         ap.error('trebuie --intrare, --iesire și cel puțin un --element')
@@ -247,7 +270,8 @@ def main():
         return
     date = citeste(a.intrare)
     spune('PROGRES', 5)
-    cu_roformer = not a.fara_roformer and are_roformer() and any(c in ('voce', 'negativ') for c in coduri)
+    cu_roformer = (not a.fara_roformer and are_roformer() and any(c in ('voce', 'negativ') for c in coduri)
+                   and (a.forteaza_roformer or are_placa_video()))
     cu_demucs = not cu_roformer or any(c in SURSE and c != 'voce' for c in coduri)
     rof = None
     if cu_roformer:

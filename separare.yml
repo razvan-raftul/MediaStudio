@@ -1,6 +1,7 @@
 name: separare
 # Pregătește programul de separare al pieselor (BS-RoFormer pentru voce și negativ, Demucs pentru instrumente, cu modelele lor, și ffmpeg cu rubberband pentru tonalitate)
-# și îl pune ca separare.zip în release-ul „separare”. Media Studio îl descarcă singur prima dată când e folosit (tabul Voce și instrumente).
+# și îl pune în release-ul „separare”, în bucăți (separare.zip.001, .002...; lista în separare-parti.txt), pentru că un fișier de release are cel mult 2 GB.
+# PyTorch e cel cu CUDA 12.8, ca să meargă pe plăcile NVIDIA noi (RTX 50xx). Media Studio îl descarcă singur prima dată când e folosit (tabul Voce și instrumente).
 # Rulează când se schimbă separare.txt, separare_lansator.py sau acest fișier, ori la cerere.
 on:
   push:
@@ -17,13 +18,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Demucs, BS-RoFormer și PyTorch (doar procesorul)
+      - name: Demucs, BS-RoFormer și PyTorch (CUDA 12.8)
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           python -m pip install --upgrade pip
-          python -m pip install torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cpu
-          python -m pip install "audio-separator[cpu]" audioread demucs==4.0.1 soundfile pyinstaller "torch==2.5.1" "torchaudio==2.5.1" --extra-index-url https://download.pytorch.org/whl/cpu
+          python -m pip install torch==2.7.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu128
+          python -m pip install "audio-separator[cpu]" audioread demucs==4.0.1 soundfile pyinstaller "torch==2.7.1" "torchaudio==2.7.1" --extra-index-url https://download.pytorch.org/whl/cu128
+          python -c "import torch; print('torch', torch.__version__, torch.version.cuda)"
           python -m pip list
           python -c "from demucs.pretrained import get_model; [get_model(n) for n in ('htdemucs', 'htdemucs_6s')]; print('modele OK')"
           Invoke-WebRequest https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip -OutFile C:\ff.zip
@@ -61,16 +63,11 @@ jobs:
           $d = @()
           $d += (& "$z\separare.exe" --verifica | Out-String)
           $sw = [Diagnostics.Stopwatch]::StartNew()
-          $d += (& "$z\separare.exe" --intrare C:\t\proba.mp3 --iesire C:\t\out --element voce Voce --element negativ Negativ --element pian Pian --semitonuri 2 2>&1 | Out-String)
+          $d += (& "$z\separare.exe" --intrare C:\t\proba.mp3 --iesire C:\t\out --element voce Voce --element negativ Negativ --element pian Pian --semitonuri 2 --forteaza-roformer 2>&1 | Out-String)
           $d += "Timp: $([int]$sw.Elapsed.TotalSeconds) s"
           $sw = [Diagnostics.Stopwatch]::StartNew()
-          $d += (& "$z\separare.exe" --intrare C:\t\proba.mp3 --iesire C:\t\out --element voce "Doar voce" --element negativ "Doar negativ" 2>&1 | Out-String)
-          $d += "Timp doar RoFormer (12 s de piesa): $([int]$sw.Elapsed.TotalSeconds) s"
-          & "$z\ffmpeg.exe" -v error -y -f lavfi -i "sine=f=330:d=72" -f lavfi -i "anoisesrc=d=72:a=0.05" -filter_complex "amix=inputs=2,aformat=channel_layouts=stereo" C:\t\lunga.mp3
-          $sw = [Diagnostics.Stopwatch]::StartNew()
-          $null = (& "$z\separare.exe" --intrare C:\t\lunga.mp3 --iesire C:\t\lung --element voce Voce 2>&1 | Out-String)
-          $d += "Timp doar RoFormer (72 s de piesa): $([int]$sw.Elapsed.TotalSeconds) s"
-          $d += "Procesoare: $([Environment]::ProcessorCount)"
+          $d += (& "$z\separare.exe" --intrare C:\t\proba.mp3 --iesire C:\t\out --element voce "Doar voce" --element negativ "Doar negativ" --fara-roformer 2>&1 | Out-String)
+          $d += "Timp fara placa video, doar Demucs (12 s de piesa): $([int]$sw.Elapsed.TotalSeconds) s"
           $d += (& "$z\separare.exe" --intrare C:\t\proba.mp3 --iesire C:\t\out --element original "Tonalitate -3" --semitonuri -3 --format wav 2>&1 | Out-String)
           $f = Get-ChildItem C:\t\out
           $d += "Fisiere: " + (($f | ForEach-Object { "$($_.Name) ($($_.Length))" }) -join ', ')
@@ -88,7 +85,12 @@ jobs:
             gh release create separare-diagnostic C:\t\diagnostic-separare.txt --prerelease --title "Separare (proba nereusita)" --notes "Diagnostic"
             Write-Host "Proba nu a trecut; nu public arhiva"; exit 1
           }
-          Compress-Archive -Path C:\z\Separare\* -DestinationPath C:\t\separare.zip -CompressionLevel Optimal
-          "separare.zip: {0:N0} MB" -f ((Get-Item C:\t\separare.zip).Length / 1MB)
+          New-Item -ItemType Directory -Force C:\p | Out-Null
+          Push-Location C:\z\Separare
+          7z a -tzip -mx=5 -v1900m C:\p\separare.zip * | Out-Null
+          Pop-Location
+          $parti = Get-ChildItem C:\p -Filter 'separare.zip.*' | Sort-Object Name
+          $parti | ForEach-Object { "{0} {1}" -f $_.Name, $_.Length } | Set-Content C:\t\separare-parti.txt -Encoding ascii
+          Get-Content C:\t\separare-parti.txt
           gh release delete separare --yes --cleanup-tag 2>$null
-          gh release create separare C:\t\separare.zip C:\t\diagnostic-separare.txt separare.txt --prerelease --title "Separare" --notes "Programul de separare a pieselor (BS-RoFormer si Demucs) si de schimbare a tonalitatii, pentru Media Studio."
+          gh release create separare ($parti | ForEach-Object { $_.FullName }) C:\t\separare-parti.txt C:\t\diagnostic-separare.txt separare.txt --prerelease --title "Separare" --notes "Programul de separare a pieselor (BS-RoFormer si Demucs, CUDA 12.8) si de schimbare a tonalitatii, pentru Media Studio."
