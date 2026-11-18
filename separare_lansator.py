@@ -193,7 +193,13 @@ def separa(date, model_nume, de_la=5, pana_la=90):
     from demucs.pretrained import get_model
 
     torch.set_num_threads(max(1, os.cpu_count() or 1))
-    model = get_model(model_nume, repo=Path(BAZA, 'modele'))
+    # PyTorch 2.6+ încarcă implicit doar greutăți; modelele Demucs (de la Meta, aduse de noi) sunt obiecte întregi
+    _incarca = torch.load
+    torch.load = lambda *x, **k: _incarca(*x, **{'weights_only': False, **k})
+    try:
+        model = get_model(model_nume, repo=Path(BAZA, 'modele'))
+    finally:
+        torch.load = _incarca
     model.eval()
     parti = len(getattr(model, 'models', [model]))
     stare = {'apel': 0}
