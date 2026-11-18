@@ -66,6 +66,11 @@ jobs:
           $sw = [Diagnostics.Stopwatch]::StartNew()
           $d += (& "$z\separare.exe" --intrare C:\t\proba.mp3 --iesire C:\t\out --element voce "Doar voce" --element negativ "Doar negativ" 2>&1 | Out-String)
           $d += "Timp doar RoFormer (12 s de piesa): $([int]$sw.Elapsed.TotalSeconds) s"
+          & "$z\ffmpeg.exe" -v error -y -f lavfi -i "sine=f=330:d=72" -f lavfi -i "anoisesrc=d=72:a=0.05" -filter_complex "amix=inputs=2,aformat=channel_layouts=stereo" C:\t\lunga.mp3
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          $null = (& "$z\separare.exe" --intrare C:\t\lunga.mp3 --iesire C:\t\lung --element voce Voce 2>&1 | Out-String)
+          $d += "Timp doar RoFormer (72 s de piesa): $([int]$sw.Elapsed.TotalSeconds) s"
+          $d += "Procesoare: $([Environment]::ProcessorCount)"
           $d += (& "$z\separare.exe" --intrare C:\t\proba.mp3 --iesire C:\t\out --element original "Tonalitate -3" --semitonuri -3 --format wav 2>&1 | Out-String)
           $f = Get-ChildItem C:\t\out
           $d += "Fisiere: " + (($f | ForEach-Object { "$($_.Name) ($($_.Length))" }) -join ', ')
