@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
@@ -18,7 +19,9 @@ namespace MediaStudio
     partial class MainForm
     {
         const string SepUrl = "https://github.com/razvan-raftul/MediaStudio/releases/download/separare/separare.zip";
-        const string SepVersiune = "demucs 4.0.1, htdemucs + htdemucs_6s, ffmpeg rubberband, v1";   // aceeași ca în separare.txt
+        // programul e în bucăți (separare.zip.001, .002...), pentru că un fișier de release are cel mult 2 GB; lista e aici
+        const string SepPartiUrl = "https://github.com/razvan-raftul/MediaStudio/releases/download/separare/separare-parti.txt";
+        const string SepVersiune = "bs-roformer 1297 + demucs 4.0.1, htdemucs + htdemucs_6s, ffmpeg rubberband, cuda 12.8, v4";   // aceeași ca în separare.txt
 
         // codul pentru separare.exe, textul bifei, numele fișierului
         static readonly string[][] SepElemente =
@@ -204,38 +207,76 @@ namespace MediaStudio
             })));
         }
 
+        /// <summary>Bucățile programului de separare: (adresa, mărimea). Dacă lista lipsește, o singură arhivă.</summary>
+        static List<KeyValuePair<string, long>> SepParti()
+        {
+            var parti = new List<KeyValuePair<string, long>>();
+            try
+            {
+                using (var wc = new WebClient())
+                {
+                    wc.Headers[HttpRequestHeader.UserAgent] = "MediaStudio";
+                    wc.Encoding = Encoding.UTF8;
+                    var baza = SepPartiUrl.Substring(0, SepPartiUrl.LastIndexOf('/') + 1);
+                    foreach (var rand in wc.DownloadString(SepPartiUrl).Split('\n'))
+                    {
+                        var bucati = rand.Trim().Split(' ');
+                        long marime;
+                        if (bucati.Length == 2 && long.TryParse(bucati[1], out marime))
+                            parti.Add(new KeyValuePair<string, long>(baza + bucati[0], marime));
+                    }
+                }
+            }
+            catch (WebException) { parti.Clear(); }
+            if (parti.Count == 0) parti.Add(new KeyValuePair<string, long>(SepUrl, 0));
+            return parti;
+        }
+
         void SepDownload()
         {
             Directory.CreateDirectory(Tools.ToolDir);
             var zip = Path.Combine(Path.GetTempPath(), "MediaStudio-separare-" + Process.GetCurrentProcess().Id + ".zip");
             try
             {
-                var req = (HttpWebRequest)WebRequest.Create(SepUrl);
-                req.UserAgent = "MediaStudio";
-                using (var resp = req.GetResponse())
-                using (var src = resp.GetResponseStream())
+                var parti = SepParti();
+                long total = parti.Sum(x => x.Value), done = 0;
+                int last = -1;
                 using (var dst = File.Create(zip))
                 {
-                    long total = resp.ContentLength, done = 0;
                     var buf = new byte[1 << 20];
-                    int n, last = -1;
-                    while ((n = src.Read(buf, 0, buf.Length)) > 0)
+                    foreach (var parte in parti)
                     {
-                        if (sepStopped) return;
-                        dst.Write(buf, 0, n);
-                        done += n;
-                        if (total > 0)
+                        var req = (HttpWebRequest)WebRequest.Create(parte.Key);
+                        req.UserAgent = "MediaStudio";
+                        req.Timeout = 60000;
+                        req.ReadWriteTimeout = 120000;
+                        long inParte = 0;
+                        using (var resp = req.GetResponse())
+                        using (var src = resp.GetResponseStream())
                         {
-                            int p = (int)(done * 100 / total) / 10 * 10;
-                            if (p > last && p < 100)
+                            if (total == 0) total = resp.ContentLength;
+                            int n;
+                            while ((n = src.Read(buf, 0, buf.Length)) > 0)
                             {
-                                last = p;
-                                string mb = (total / 1048576).ToString();
-                                BeginInvoke((Action)(() => Announce("Se descarcă programul de separare (" + mb + " MB): " + p + "%", false)));
+                                if (sepStopped) return;
+                                dst.Write(buf, 0, n);
+                                done += n;
+                                inParte += n;
+                                if (total > 0)
+                                {
+                                    int p = (int)(done * 100 / total) / 10 * 10;
+                                    if (p > last && p < 100)
+                                    {
+                                        last = p;
+                                        string mb = (total / 1048576).ToString();
+                                        BeginInvoke((Action)(() => Announce("Se descarcă programul de separare (" + mb + " MB): " + p + "%", false)));
+                                    }
+                                }
                             }
+                            if (parte.Value > 0 && inParte != parte.Value) throw new IOException("descărcarea nu s-a terminat întreagă");
+                            if (parte.Value == 0 && resp.ContentLength > 0 && inParte != resp.ContentLength) throw new IOException("descărcarea nu s-a terminat întreagă");
                         }
                     }
-                    if (total > 0 && done != total) throw new IOException("descărcarea nu s-a terminat întreagă");
                 }
                 BeginInvoke((Action)(() => Announce("Despachetez programul de separare.", false)));
                 var nou = SepDir + ".nou";
