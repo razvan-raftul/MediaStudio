@@ -1,4 +1,4 @@
 # Programul de separare al pieselor (vocea, tobele, basul... despărțite) și de schimbare a tonalității.
-# Se face pe GitHub în workflow-ul „separare” (Demucs 4.0.1 cu modelele htdemucs și htdemucs_6s, ffmpeg cu rubberband).
+# Se face pe GitHub în workflow-ul „separare” (BS-RoFormer Viperx 1297 pentru voce și negativ, Demucs 4.0.1 cu htdemucs și htdemucs_6s pentru instrumente, ffmpeg cu rubberband).
 # Media Studio îl descarcă singur prima dată când folosești tabul Voce și instrumente; dacă se schimbă linia de mai jos, îl descarcă din nou.
-Separare = demucs 4.0.1, htdemucs + htdemucs_6s, ffmpeg rubberband, v1
+Separare = bs-roformer 1297 + demucs 4.0.1, htdemucs + htdemucs_6s, ffmpeg rubberband, v2

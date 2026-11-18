@@ -1,9 +1,11 @@
 """Separarea pieselor audio și schimbarea tonalității, pentru Media Studio (tabul Voce și instrumente).
-Din el se face separare.exe în workflow-ul „separare” (cu Demucs, modelele lui și ffmpeg alături).
+Din el se face separare.exe în workflow-ul „separare” (cu Demucs, BS-RoFormer, modelele lor și ffmpeg alături).
+Vocea și negativul se scot cu BS-RoFormer (modelul Viperx 1297, același fel de model ca pe X-Minus), prin pachetul audio-separator;
+tobele, basul, chitara, pianul și restul se scot cu Demucs. Dacă modelul RoFormer lipsește, totul merge cu Demucs, ca înainte.
 
 Folosire:
   separare.exe --intrare PIESA --iesire FOLDER [--element COD ETICHETA]... [--impreuna ETICHETA]
-               [--semitonuri N] [--format mp3|wav] [--model htdemucs|htdemucs_6s|htdemucs_ft]
+               [--semitonuri N] [--format mp3|wav] [--model htdemucs|htdemucs_6s|htdemucs_ft] [--fara-roformer]
 
 Codurile elementelor: voce, tobe, bas, chitara, pian, restul, negativ (tot fără voce), original (piesa întreagă).
 Cu --impreuna, elementele alese se pun împreună într-un singur fișier (cu eticheta dată).
@@ -20,6 +22,8 @@ BAZA = os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else os.p
 SR = 44100
 SURSE = {'voce': 'vocals', 'tobe': 'drums', 'bas': 'bass', 'chitara': 'guitar', 'pian': 'piano', 'restul': 'other'}
 FARA_FEREASTRA = 0x08000000 if os.name == 'nt' else 0
+ROFORMER = 'model_bs_roformer_ep_317_sdr_12.9755.ckpt'
+DIR_ROFORMER = os.path.join(BAZA, 'modele', 'roformer')
 
 
 def spune(*a):
@@ -93,7 +97,77 @@ def doar_tonalitate(intrare, cale, semitonuri, fmt):
     spune('FISIER', cale)
 
 
-def separa(date, model_nume):
+def are_roformer():
+    return os.path.isfile(os.path.join(DIR_ROFORMER, ROFORMER))
+
+
+def separa_roformer(date, de_la, pana_la):
+    """Vocea și negativul cu BS-RoFormer. Întoarce (voce, negativ), numpy (2, n), cât piesa."""
+    import inspect
+    import logging
+    import tempfile
+    import numpy as np
+    import tqdm as _tqdm_pachet
+    import tqdm.auto as _tqdm_auto
+
+    original = _tqdm_pachet.tqdm
+
+    class _Progres(original):
+        """În locul barei tqdm: spune procentul (din de_la până la pana_la) pe măsură ce se lucrează piesa."""
+        def __init__(self, *a, **k):
+            k['disable'] = False
+            k['file'] = open(os.devnull, 'w')
+            super().__init__(*a, **k)
+            self._ultim = -1
+
+        def update(self, n=1):
+            r = super().update(n)
+            if self.total:
+                p = de_la + int((pana_la - de_la) * min(1.0, self.n / self.total))
+                if p != self._ultim:
+                    self._ultim = p
+                    spune('PROGRES', p)
+            return r
+
+    _tqdm_pachet.tqdm = _Progres
+    _tqdm_auto.tqdm = _Progres
+    os.environ['PATH'] = BAZA + os.pathsep + os.environ.get('PATH', '')     # pydub găsește ffmpeg-ul de lângă
+    import torch
+    torch.set_num_threads(max(1, os.cpu_count() or 1))
+    from audio_separator.separator import Separator
+
+    with tempfile.TemporaryDirectory(prefix='separare-') as tmp:
+        intrare = os.path.join(tmp, 'piesa.wav')
+        p = subprocess.run([ffmpeg(), '-v', 'error', '-y', '-f', 'f32le', '-ar', str(SR), '-ac', '2', '-i', '-', '-c:a', 'pcm_f32le', intrare],
+                           input=np.ascontiguousarray(date.T, dtype=np.float32).tobytes(), capture_output=True, creationflags=FARA_FEREASTRA)
+        if p.returncode != 0:
+            raise RuntimeError('ffmpeg: ' + p.stderr.decode('utf-8', 'replace').strip()[-400:])
+        iesire = os.path.join(tmp, 'iesire')
+        os.makedirs(iesire)
+        param = dict(model_file_dir=DIR_ROFORMER, output_dir=iesire, output_format='WAV', sample_rate=SR,
+                     log_level=logging.WARNING, use_soundfile=True)
+        acceptate = inspect.signature(Separator.__init__).parameters
+        sep = Separator(**{k: v for k, v in param.items() if k in acceptate})
+        sep.load_model(ROFORMER)
+        fisiere = [f if os.path.isabs(f) else os.path.join(iesire, os.path.basename(f)) for f in sep.separate(intrare)]
+        _tqdm_pachet.tqdm = original
+        _tqdm_auto.tqdm = original
+        voce = next((f for f in fisiere if '(vocals)' in os.path.basename(f).lower()), None)
+        negativ = next((f for f in fisiere if '(instrumental)' in os.path.basename(f).lower()), None)
+        if voce is None:
+            raise RuntimeError('BS-RoFormer nu a dat vocea: ' + ', '.join(os.path.basename(f) for f in fisiere))
+        v = citeste(voce)
+        n = date.shape[1]
+        v = v[:, :n] if v.shape[1] >= n else np.pad(v, ((0, 0), (0, n - v.shape[1])))
+        if negativ is not None:
+            neg = citeste(negativ)
+            neg = neg[:, :n] if neg.shape[1] >= n else np.pad(neg, ((0, 0), (0, n - neg.shape[1])))
+        else:
+            neg = date - v
+        return v, neg
+
+
+def separa(date, model_nume, de_la=5, pana_la=90):
     """Desparte piesa cu Demucs. Întoarce {sursa: numpy (2, n)}."""
     import numpy as np
     import torch
@@ -117,10 +191,10 @@ def separa(date, model_nume):
             ultim = -1
             for i, x in enumerate(lucrari):
                 yield x
-                procent = 5 + int(85 * (apel + (i + 1) / max(1, len(lucrari))) / parti)
+                procent = de_la + int((pana_la - de_la) * (apel + (i + 1) / max(1, len(lucrari))) / parti)
                 if procent != ultim:
                     ultim = procent
-                    spune('PROGRES', min(90, procent))
+                    spune('PROGRES', min(pana_la, procent))
 
     da.tqdm = _Progres
     wav = torch.from_numpy(date)
@@ -142,11 +216,13 @@ def main():
     ap.add_argument('--semitonuri', type=int, default=0)
     ap.add_argument('--format', choices=['mp3', 'wav'], default='mp3')
     ap.add_argument('--model')
+    ap.add_argument('--fara-roformer', action='store_true', help='vocea și negativul tot cu Demucs')
     ap.add_argument('--verifica', action='store_true', help='spune ce poate (rubberband, modele) și iese')
     a = ap.parse_args()
     if a.verifica:
         spune('RUBBERBAND', are_rubberband())
         spune('MODELE', sorted(os.listdir(os.path.join(BAZA, 'modele'))) if os.path.isdir(os.path.join(BAZA, 'modele')) else [])
+        spune('ROFORMER', are_roformer())
         return
     if not a.intrare or not a.iesire or not a.element:
         ap.error('trebuie --intrare, --iesire și cel puțin un --element')
@@ -168,12 +244,23 @@ def main():
         return
     date = citeste(a.intrare)
     spune('PROGRES', 5)
-    model = a.model or ('htdemucs_6s' if any(c in ('chitara', 'pian') for c in coduri) else 'htdemucs')
-    surse = separa(date, model)
+    cu_roformer = not a.fara_roformer and are_roformer() and any(c in ('voce', 'negativ') for c in coduri)
+    cu_demucs = not cu_roformer or any(c in SURSE and c != 'voce' for c in coduri)
+    rof = None
+    if cu_roformer:
+        rof = separa_roformer(date, 5, 50 if cu_demucs else 90)
+    surse = {}
+    if cu_demucs:
+        model = a.model or ('htdemucs_6s' if any(c in ('chitara', 'pian') for c in coduri) else 'htdemucs')
+        surse = separa(date, model, 50 if cu_roformer else 5, 90)
 
     def element(cod):
         if cod == 'original':
             return date
+        if rof is not None and cod == 'voce':
+            return rof[0]
+        if rof is not None and cod == 'negativ':
+            return rof[1]
         if cod == 'negativ':
             return sum(v for k, v in surse.items() if k != 'vocals')
         return surse[SURSE[cod]]
