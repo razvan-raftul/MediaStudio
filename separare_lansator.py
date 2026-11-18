@@ -145,7 +145,10 @@ def separa_roformer(date, de_la, pana_la):
         iesire = os.path.join(tmp, 'iesire')
         os.makedirs(iesire)
         param = dict(model_file_dir=DIR_ROFORMER, output_dir=iesire, output_format='WAV', sample_rate=SR,
-                     log_level=logging.WARNING, use_soundfile=True)
+                     log_level=logging.WARNING, use_soundfile=True,
+                     # overlap 4 în loc de 8: de două ori mai repede pe procesor, aproape aceeași calitate
+                     mdxc_params={'segment_size': 256, 'override_model_segment_size': False, 'batch_size': 1,
+                                  'overlap': 4, 'pitch_shift': 0})
         acceptate = inspect.signature(Separator.__init__).parameters
         sep = Separator(**{k: v for k, v in param.items() if k in acceptate})
         sep.load_model(ROFORMER)
