@@ -9,8 +9,8 @@ namespace MediaStudio
     partial class MainForm
     {
         TextBox snAudio;
-        ComboBox snAction, snShorter, snEnd;
-        NumericUpDown snMixClip, snMixAudio, snFadeSec;
+        ComboBox snAction, snLength, snEnd;
+        NumericUpDown snMixClip, snMixAudio;
 
         static readonly string[] SnActions =
         {
@@ -19,17 +19,17 @@ namespace MediaStudio
             "Adaug sunetul nou ca a doua pistă de sunet (în player alegi pe care o asculți)"
         };
 
-        static readonly string[] SnShorter =
+        static readonly string[] SnLength =
         {
-            "Se termină unde se termină videoclipul, restul sunetului se taie",
-            "Sunetul merge până la capăt, iar după videoclip rămâne ecran negru"
+            "Cât videoclipul",
+            "Cât sunetul nou"
         };
 
         static readonly string[] SnEnd =
         {
             "Nu se stinge nimic",
-            "Se stinge doar imaginea clipului, sunetul rămâne",
-            "Se stinge totul, imaginea și sunetul"
+            "Se stinge doar imaginea",
+            "Se stinge tot, imaginea și sunetul"
         };
 
         /// <summary>Partea „Un sunet nou” din fila Poze și sunet peste clip: sunetul, ce fac cu el, volumele, finalul, Pune sunetul.</summary>
@@ -43,21 +43,19 @@ namespace MediaStudio
             snAction = h.Combo(null, "Ce fac cu sunetul &nou", SnActions, 0);
             snMixClip = h.Number(null, "Volumul sunetului din clip (la sută, 0 înseamnă că nu se aude)", 0, 200, 30, 5);
             snMixAudio = h.Number(null, "Volumul sunetului nou (la sută)", 0, 200, 100, 5);
-            snShorter = h.Combo(null, "Dacă videoclipul e mai scurt decât sunetul nou", SnShorter, 0);
-            snEnd = h.Combo(null, "Cum se termină, se stinge la final", SnEnd, 0);
-            snFadeSec = h.Number(null, "Câte secunde ține stingerea", 1, 10, 2, 1);
+            snLength = h.Combo(null, "Cât ține rezultatul", SnLength, 0, false,
+                "Cât videoclipul: sunetul prea lung se taie, iar dacă e prea scurt, la final e liniște. Cât sunetul nou: dacă videoclipul e mai lung, se taie, iar dacă e mai scurt, după el rămâne ecran negru.");
+            snEnd = h.Combo(null, "La final se stinge în 2 secunde", SnEnd, 0);
             h.Buttons(Builder.B("Pune s&unetul", (s, e) => Run(SoundJob())));
 
-            // volumele au rost doar la amestec, durata stingerii doar dacă se stinge ceva
+            // volumele au rost doar la amestec
             Action sync = () =>
             {
                 bool mix = snAction.SelectedIndex == 1;
                 Builder.ShowRow(snMixClip, mix);
                 Builder.ShowRow(snMixAudio, mix);
-                Builder.ShowRow(snFadeSec, snEnd.SelectedIndex > 0);
             };
             snAction.SelectedIndexChanged += (s, e) => sync();
-            snEnd.SelectedIndexChanged += (s, e) => sync();
             sync();
             ShowWhenFile(snAudio, boxAudio);
         }
@@ -71,7 +69,7 @@ namespace MediaStudio
             var audio = snAudio.Text.Trim();
             int act = Math.Max(0, snAction.SelectedIndex);
             int endMode = Math.Max(0, snEnd.SelectedIndex);
-            double fd = (double)snFadeSec.Value;
+            double fd = 2;
             var ext = Path.GetExtension(input).ToLowerInvariant();
             const string folder = "Sunet peste videoclip";   // folderul rămâne cu acest nume
 
@@ -81,8 +79,10 @@ namespace MediaStudio
 
             // cât țin videoclipul și sunetul nou; din ele iese cât ține rezultatul
             double vd = Runner.ProbeDuration(input), ad = Runner.ProbeDuration(audio);
-            bool tail = snShorter.SelectedIndex == 1 && vd > 0 && ad > vd + 0.05;   // ecran negru după videoclip
-            double outDur = tail ? ad : vd;
+            bool bySound = snLength.SelectedIndex == 1 && ad > 0;
+            bool tail = bySound && vd > 0 && ad > vd + 0.05;   // ecran negru după videoclip
+            double outDur = bySound ? ad : vd;
+            double clipEnd = tail ? vd : outDur;               // unde se termină imaginea clipului
             if (endMode > 0 && vd <= 0) { ShowError("Nu pot afla cât durează videoclipul, așa că nu pot face stingerea. Verifică dacă FFprobe e configurat în Setări."); return null; }
             if (endMode > 0 && outDur > 0) fd = Math.Min(fd, outDur / 2);
 
@@ -102,7 +102,7 @@ namespace MediaStudio
             if (reVideo)
             {
                 var v = new List<string>();
-                if (endMode > 0) v.Add("fade=t=out:st=" + Sec(Math.Max(0, vd - fd)) + ":d=" + Sec(fd));
+                if (endMode > 0) v.Add("fade=t=out:st=" + Sec(Math.Max(0, clipEnd - fd)) + ":d=" + Sec(fd));
                 if (tail) v.Add("tpad=stop_mode=add:stop_duration=" + Sec(ad - vd) + ":color=black");
                 v.Add("format=yuv420p");
                 filters.Add("[0:v:0]" + string.Join(",", v) + "[vout]");
@@ -159,7 +159,7 @@ namespace MediaStudio
                 else j.A("-c:a", "aac", "-b:a", act == 1 ? "192k" : "256k");
             }
 
-            // lungimea rezultatului: cât videoclipul, sau cât sunetul dacă rămâne negru după clip
+            // lungimea rezultatului: cât videoclipul sau cât sunetul nou
             if (outDur > 0) j.A("-t", Sec(outDur));
             else j.A("-shortest");
 
