@@ -63,6 +63,7 @@ namespace MediaStudio
             var j = new Job(Tool.Ytdlp, urls.Count == 1 ? "Descărcare: " + urls[0] : "Descărcare: " + urls.Count + " adrese");
             j.A("--newline", "--no-colors");
             if (File.Exists(Settings.FfmpegPath)) j.A("--ffmpeg-location", Path.GetDirectoryName(Settings.FfmpegPath));
+            j.A(Tools.JsRuntimeArgs());
 
             j.A("-P", DownloadDir());
             // numele original; la playlist intră într-un folder cu numele playlistului

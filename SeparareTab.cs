@@ -109,6 +109,7 @@ namespace MediaStudio
             Directory.CreateDirectory(sepTemp);
             var a = new StringBuilder("--no-playlist --newline --no-part -f bestaudio/best -x --audio-format wav");
             if (File.Exists(Settings.FfmpegPath)) a.Append(" --ffmpeg-location ").Append(Runner.Quote(Path.GetDirectoryName(Settings.FfmpegPath)));
+            if (File.Exists(Tools.DenoPath)) a.Append(" --js-runtimes ").Append(Runner.Quote("deno:" + Tools.DenoPath));
             a.Append(" -o ").Append(Runner.Quote(Path.Combine(sepTemp, "%(title)s.%(ext)s"))).Append(' ').Append(Runner.Quote(url));
             Announce("Descarc piesa de pe internet.");
             Log("");

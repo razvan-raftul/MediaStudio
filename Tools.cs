@@ -86,6 +86,53 @@ namespace MediaStudio
             Settings.Save();
         }
 
+        // ---------------- yt-dlp la zi și Deno (YouTube cere un motor JavaScript) ----------------
+        public const string DenoUrl = "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip";
+        public static string DenoPath { get { return Path.Combine(ToolDir, "deno.exe"); } }
+
+        /// <summary>Argumentul care îi spune lui yt-dlp unde e Deno (gol dacă Deno nu e încă descărcat).</summary>
+        public static string[] JsRuntimeArgs()
+        {
+            return File.Exists(DenoPath) ? new[] { "--js-runtimes", "deno:" + DenoPath } : new string[0];
+        }
+
+        /// <summary>La pornire, în fundal și fără să spună nimic: aduce Deno dacă lipsește și actualizează yt-dlp
+        /// (cel mult o dată pe zi). YouTube se schimbă des, iar un yt-dlp vechi dă „This video is not available”.</summary>
+        public static void KeepFreshAsync()
+        {
+            Task.Run(async () =>
+            {
+                try
+                {
+                    if (!File.Exists(DenoPath))
+                    {
+                        Directory.CreateDirectory(ToolDir);
+                        var zip = Path.Combine(ToolDir, "deno.zip");
+                        await Download(DenoUrl, zip, "Deno", (t, p) => { });
+                        using (var a = ZipFile.OpenRead(zip))
+                        {
+                            var e = a.Entries.FirstOrDefault(x => x.Name.Equals("deno.exe", StringComparison.OrdinalIgnoreCase));
+                            if (e != null) e.ExtractToFile(DenoPath + ".part", true);
+                        }
+                        File.Delete(zip);
+                        if (File.Exists(DenoPath + ".part")) File.Move(DenoPath + ".part", DenoPath);
+                    }
+                }
+                catch { }
+                try
+                {
+                    var azi = DateTime.Now.ToString("yyyy-MM-dd");
+                    if (File.Exists(Settings.YtdlpPath) && Settings.Get("ytdlpActualizat") != azi)
+                    {
+                        Runner.Capture(Tool.Ytdlp, "-U", 180000);
+                        Settings.Set("ytdlpActualizat", azi);
+                        Settings.Save();
+                    }
+                }
+                catch { }
+            });
+        }
+
         public static async Task DownloadFfmpeg(Action<string, int> report)
         {
             Directory.CreateDirectory(ToolDir);

@@ -64,7 +64,7 @@ namespace MediaStudio
             logTimer.Start();
 
             tabs.SelectedIndex = 0; // la pornire se deschide mereu Descărcare
-            Shown += (s, e) => { tabs.Focus(); ReportMissingTools(true); Updater.CheckAsync(this); };
+            Shown += (s, e) => { tabs.Focus(); ReportMissingTools(true); Updater.CheckAsync(this); Tools.KeepFreshAsync(); };
             FormClosing += (s, e) =>
             {
                 if (!updating && (runner.Running || sepBusy) && MessageBox.Show(this, "O operațiune încă rulează. O opresc și închid aplicația?", "Media Studio", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) { e.Cancel = true; return; }
